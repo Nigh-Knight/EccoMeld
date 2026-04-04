@@ -87,33 +87,33 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INFRA-01 | — | Pending |
-| INFRA-02 | — | Pending |
-| INFRA-03 | — | Pending |
-| INFRA-04 | — | Pending |
-| BRDG-01 | — | Pending |
-| BRDG-02 | — | Pending |
-| BRDG-03 | — | Pending |
-| BRDG-04 | — | Pending |
-| BRDG-05 | — | Pending |
-| BRDG-06 | — | Pending |
-| BRDG-07 | — | Pending |
-| PLAY-01 | — | Pending |
-| PLAY-02 | — | Pending |
-| PLAY-03 | — | Pending |
-| PLAY-04 | — | Pending |
-| PLAY-05 | — | Pending |
-| PLAY-06 | — | Pending |
-| PLAY-07 | — | Pending |
-| SPOT-01 | — | Pending |
-| SPOT-02 | — | Pending |
-| SPOT-03 | — | Pending |
+| INFRA-01 | Phase 1 | Pending |
+| INFRA-02 | Phase 1 | Pending |
+| INFRA-03 | Phase 1 | Pending |
+| INFRA-04 | Phase 1 | Pending |
+| BRDG-07 | Phase 2 | Pending |
+| BRDG-02 | Phase 3 | Pending |
+| BRDG-03 | Phase 3 | Pending |
+| BRDG-01 | Phase 4 | Pending |
+| BRDG-04 | Phase 4 | Pending |
+| BRDG-06 | Phase 4 | Pending |
+| PLAY-01 | Phase 5 | Pending |
+| PLAY-02 | Phase 5 | Pending |
+| PLAY-03 | Phase 5 | Pending |
+| PLAY-04 | Phase 5 | Pending |
+| PLAY-05 | Phase 5 | Pending |
+| BRDG-05 | Phase 6 | Pending |
+| PLAY-06 | Phase 6 | Pending |
+| PLAY-07 | Phase 6 | Pending |
+| SPOT-01 | Phase 7 | Pending |
+| SPOT-02 | Phase 7 | Pending |
+| SPOT-03 | Phase 7 | Pending |
 
 **Coverage:**
 - v1 requirements: 21 total
-- Mapped to phases: 0
-- Unmapped: 21 ⚠️
+- Mapped to phases: 21
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-04-03*
-*Last updated: 2026-04-03 after initial definition*
+*Last updated: 2026-04-03 after roadmap creation*
