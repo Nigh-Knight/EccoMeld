@@ -3,13 +3,16 @@ package com.metrolist.music.bridge
 import android.os.Handler
 import android.webkit.WebView
 import com.metrolist.lastfm.LastFM
+import com.metrolist.music.db.MusicDatabase
 import com.metrolist.music.playback.BridgePlaylistBuilder
 import com.metrolist.music.ui.screens.bridge.BridgeUiState
+import com.metrolist.music.viewmodels.ArtistFamiliarity
 import com.metrolist.music.viewmodels.BridgeArtistInfo
 import com.metrolist.music.viewmodels.BridgeViewModel
 import com.metrolist.music.viewmodels.formatListeners
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Ignore
@@ -39,7 +42,8 @@ class BridgeViewModelTest {
         val mockWebView = mock<WebView>()
         val mockBridgeInterface = mock<MeldBridgeInterface>()
         val mockPlaylistBuilder = mock<BridgePlaylistBuilder>()
-        val viewModel = BridgeViewModel(mockWebView, mockBridgeInterface, mockPlaylistBuilder)
+        val mockDatabase = mock<MusicDatabase>()
+        val viewModel = BridgeViewModel(mockWebView, mockBridgeInterface, mockPlaylistBuilder, mockDatabase)
         return viewModel to mockWebView
     }
 
@@ -134,7 +138,7 @@ class BridgeViewModelTest {
                 get() = capturedCallback ?: {}
                 set(value) { capturedCallback = value }
         }
-        val viewModel = BridgeViewModel(mockWebView, bridgeInterfaceStub, mockPlaylistBuilder)
+        val viewModel = BridgeViewModel(mockWebView, bridgeInterfaceStub, mockPlaylistBuilder, mock<MusicDatabase>())
 
         // Simulate bridge search starting by injecting Searching state directly via the callback
         // (avoids calling startBridge() which would trigger Handler(Looper.getMainLooper()))
@@ -233,7 +237,7 @@ class BridgeViewModelTest {
                 get() = capturedCallback ?: {}
                 set(value) { capturedCallback = value }
         }
-        val viewModel = BridgeViewModel(mockWebView, bridgeInterfaceStub, mockPlaylistBuilder)
+        val viewModel = BridgeViewModel(mockWebView, bridgeInterfaceStub, mockPlaylistBuilder, mock<MusicDatabase>())
 
         // Inject PlaylistReady state with a known path via reflection on _currentPath
         // and directly set _uiState to PlaylistReady
@@ -269,7 +273,7 @@ class BridgeViewModelTest {
                 get() = capturedCallback ?: {}
                 set(value) { capturedCallback = value }
         }
-        val viewModel = BridgeViewModel(mockWebView, bridgeInterfaceStub, mockPlaylistBuilder)
+        val viewModel = BridgeViewModel(mockWebView, bridgeInterfaceStub, mockPlaylistBuilder, mock<MusicDatabase>())
 
         val path = listOf("Radiohead", "Thom Yorke")
         val currentPathField = BridgeViewModel::class.java.getDeclaredField("_currentPath")
@@ -299,7 +303,7 @@ class BridgeViewModelTest {
                 get() = capturedCallback ?: {}
                 set(value) { capturedCallback = value }
         }
-        val viewModel = BridgeViewModel(mockWebView, bridgeInterfaceStub, mockPlaylistBuilder)
+        val viewModel = BridgeViewModel(mockWebView, bridgeInterfaceStub, mock<BridgePlaylistBuilder>(), mock<MusicDatabase>())
 
         val path = listOf("Radiohead", "Thom Yorke")
         val currentPathField = BridgeViewModel::class.java.getDeclaredField("_currentPath")
@@ -315,5 +319,120 @@ class BridgeViewModelTest {
         // Whitespace-padded artist name -> still matches
         viewModel.onNowPlayingArtistChanged(" Radiohead ")
         assertEquals(0, (viewModel.uiState.value as BridgeUiState.PlaylistReady).nowPlayingIndex)
+    }
+
+    // --- Jaccard similarity tests (SPOT-02) ---
+
+    @Test
+    fun jaccard_picks_most_diverse_pair() {
+        // A={"rock","indie"}, B={"hip-hop","rap"}, C={"rock","rap"}
+        // A∩B={}, A∪B={"rock","indie","hip-hop","rap"} → sim=0.0
+        // A∩C={"rock"}, A∪C={"rock","indie","rap"} → sim=1/3 ≈ 0.33
+        // B∩C={"rap"}, B∪C={"hip-hop","rap","rock"} → sim=1/3 ≈ 0.33
+        // Most diverse: A,B (0.0 similarity)
+        val (viewModel, _) = buildViewModel()
+        val tagMap = mapOf(
+            "A" to setOf("rock", "indie"),
+            "B" to setOf("hip-hop", "rap"),
+            "C" to setOf("rock", "rap"),
+        )
+        val pair = viewModel.pickMostDiversePair(tagMap)
+        assertNotNull(pair)
+        // pair should be A,B regardless of order
+        val pairSet = setOf(pair!!.first, pair.second)
+        assertEquals(setOf("A", "B"), pairSet)
+    }
+
+    @Test
+    fun jaccard_handles_empty_tags() {
+        // One artist with empty tags — should not crash, similarity treated as 1.0
+        val (viewModel, _) = buildViewModel()
+        val sim = viewModel.jaccardSimilarity(emptySet(), setOf("rock", "pop"))
+        // empty ∩ {rock,pop} = 0, union = {rock,pop} size=2 → sim = 0.0/2 = 0.0
+        assertEquals(0.0, sim, 0.001)
+    }
+
+    @Test
+    fun jaccard_both_empty_returns_1() {
+        val (viewModel, _) = buildViewModel()
+        val sim = viewModel.jaccardSimilarity(emptySet(), emptySet())
+        assertEquals(1.0, sim, 0.001)
+    }
+
+    @Test
+    fun jaccard_identical_sets_returns_1() {
+        val (viewModel, _) = buildViewModel()
+        val tags = setOf("rock", "indie", "alternative")
+        val sim = viewModel.jaccardSimilarity(tags, tags)
+        assertEquals(1.0, sim, 0.001)
+    }
+
+    // --- loadSeedSuggestions tests (SPOT-01) ---
+
+    @Test
+    @Ignore("Requires coroutine test dispatcher + Room mock setup — deferred to integration test suite")
+    fun loadSeedSuggestions_deduplicates_by_name() {
+        // mock DB returns ["Radiohead", "The National"]
+        // mock Spotify returns ["radiohead", "Bjork"]
+        // Expected: seedSuggestions emits ["Radiohead", "The National", "Bjork"] (3 items, not 4)
+        // Deferred: requires suspend flow mock + TestCoroutineScheduler to advance coroutines
+    }
+
+    @Test
+    @Ignore("Requires coroutine test dispatcher + Room mock setup — deferred to integration test suite")
+    fun seedSuggestions_empty_when_no_sources() {
+        // mock DB returns empty, Spotify auth fails -> seedSuggestions emits emptyList()
+    }
+
+    @Test
+    @Ignore("Requires coroutine test dispatcher + Room mock setup — deferred to integration test suite")
+    fun seedSuggestions_falls_back_on_spotify_error() {
+        // mock DB returns ["Radiohead"], Spotify throws -> seedSuggestions emits ["Radiohead"]
+    }
+
+    @Test
+    @Ignore("Requires coroutine test dispatcher + startBridge Handler mock — deferred to integration test suite")
+    fun randomBridge_fills_inputs_and_starts() {
+        // mock tag cache with 2+ tagged artists -> fromConfirmedArtist and toConfirmedArtist are set
+    }
+
+    @Test
+    fun randomBridge_toast_when_insufficient_artists() {
+        // seedSuggestions has 0 artists (default) -> _randomBridgeToast emits toastMessage
+        val (viewModel, _) = buildViewModel()
+        viewModel.randomBridge("Add some artists to your library first")
+        assertEquals(
+            "Toast should be set when fewer than 2 artists available",
+            "Add some artists to your library first",
+            viewModel.randomBridgeToast.value,
+        )
+    }
+
+    @Test
+    fun randomBridge_toast_cleared_by_clearRandomBridgeToast() {
+        val (viewModel, _) = buildViewModel()
+        viewModel.randomBridge("test message")
+        viewModel.clearRandomBridgeToast()
+        assertEquals(null, viewModel.randomBridgeToast.value)
+    }
+
+    // --- resolveFamiliarity tests (SPOT-03) ---
+
+    @Test
+    @Ignore("Requires coroutine test dispatcher + Room mock setup — deferred to integration test suite")
+    fun familiarity_marks_known_artists() {
+        // DB has "Radiohead", path has "Radiohead" -> map["Radiohead"] == KNOWN
+    }
+
+    @Test
+    @Ignore("Requires coroutine test dispatcher + Room mock setup — deferred to integration test suite")
+    fun familiarity_matching_is_case_insensitive() {
+        // DB has "radiohead", path has "Radiohead" -> map["Radiohead"] == KNOWN
+    }
+
+    @Test
+    @Ignore("Requires coroutine test dispatcher + Room mock setup — deferred to integration test suite")
+    fun familiarity_marks_unknown_as_new() {
+        // neither DB nor Spotify has "Obscure Band" -> map["Obscure Band"] == NEW
     }
 }

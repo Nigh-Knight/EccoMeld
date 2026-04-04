@@ -978,4 +978,9 @@
     <string name="bridge_path_sheet_title">Bridge Path</string>
     <string name="bridge_path_show_button">Show Path</string>
     <string name="bridge_path_listener_count">%1$s</string>
+    <string name="bridge_random_fab_description">Random Bridge</string>
+    <string name="bridge_random_no_artists">Add some artists to your library first</string>
+    <string name="bridge_badge_new">NEW</string>
+    <string name="bridge_badge_known">known</string>
+    <string name="bridge_seeds_loading_description">Loading suggestions</string>
 </resources>
