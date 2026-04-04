@@ -10,9 +10,13 @@ import android.os.Looper
 import android.webkit.WebView
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.media3.common.MediaItem
 import com.metrolist.lastfm.LastFM
 import com.metrolist.music.bridge.MeldBridgeInterface
 import com.metrolist.music.di.BridgeWebView
+import com.metrolist.music.playback.BridgePlaylistBuilder
+import com.metrolist.music.playback.PlayerConnection
+import com.metrolist.music.playback.queues.ListQueue
 import com.metrolist.music.ui.screens.bridge.BridgeUiState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -30,6 +34,7 @@ import javax.inject.Inject
 class BridgeViewModel @Inject constructor(
     @BridgeWebView private val webView: WebView,
     private val meldBridgeInterface: MeldBridgeInterface,
+    private val playlistBuilder: BridgePlaylistBuilder,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<BridgeUiState>(BridgeUiState.Idle)
@@ -41,6 +46,22 @@ class BridgeViewModel @Inject constructor(
      */
     val isRunning: Boolean
         get() = _uiState.value is BridgeUiState.Searching
+
+    // --- Playlist building state (PLAY-01, D-06, D-07, D-08) ---
+
+    private val _isBuilding = MutableStateFlow(false)
+    val isBuilding: StateFlow<Boolean> = _isBuilding.asStateFlow()
+
+    private val _showQueueDialog = MutableStateFlow(false)
+    val showQueueDialog: StateFlow<Boolean> = _showQueueDialog.asStateFlow()
+
+    private val _buildFailed = MutableStateFlow(false)
+    val buildFailed: StateFlow<Boolean> = _buildFailed.asStateFlow()
+
+    private var _pendingPlaylistItems: List<MediaItem>? = null
+    private var _currentPath: List<String> = emptyList()
+
+    val pendingTrackCount: Int get() = _pendingPlaylistItems?.size ?: 0
 
     // --- Autocomplete state (BRDG-01, D-01, D-02, D-05) ---
 
@@ -82,9 +103,73 @@ class BridgeViewModel @Inject constructor(
         // Wire MeldBridgeInterface callbacks to update _uiState.
         // onStateChange is a mutable var property (not constructor param) — assigned post-construction
         // because Hilt creates the singleton MeldBridgeInterface before this ViewModel exists.
+        // Intercept PathFound to automatically trigger playlist building (PLAY-01).
         meldBridgeInterface.onStateChange = { newState ->
             _uiState.value = newState
+            if (newState is BridgeUiState.PathFound) {
+                viewModelScope.launch { buildPlaylist(newState.path) }
+            }
         }
+    }
+
+    /**
+     * Builds a playlist from the resolved bridge path. Called automatically on PathFound.
+     * Shows queue dialog when tracks are ready (D-06). Sets buildFailed if no tracks resolve.
+     */
+    private suspend fun buildPlaylist(path: List<String>) {
+        _currentPath = path
+        _isBuilding.value = true
+        _buildFailed.value = false
+        try {
+            val items = playlistBuilder.buildForPath(path)
+            _pendingPlaylistItems = items
+            if (items.isNotEmpty()) {
+                _showQueueDialog.value = true  // per D-06: show dialog
+            } else {
+                // All matches failed — stay on PathFound, show error message
+                _buildFailed.value = true
+                Timber.w("BridgePlaylist: no playable tracks resolved for path")
+            }
+        } finally {
+            _isBuilding.value = false
+        }
+    }
+
+    /**
+     * Replace the entire queue with the bridge playlist and start playback immediately (D-08).
+     * PlayerConnection passed from composable — not stored in ViewModel (avoids Context leak).
+     */
+    fun onConfirmReplaceQueue(playerConnection: PlayerConnection) {
+        val items = _pendingPlaylistItems ?: return
+        _showQueueDialog.value = false
+        val from = _fromConfirmedArtist.value
+        val to = _toConfirmedArtist.value
+        playerConnection.playQueue(
+            ListQueue(
+                title = "Bridge: $from \u2192 $to",
+                items = items,
+                startIndex = 0,
+            )
+        )
+        _uiState.value = BridgeUiState.PlaylistReady(path = _currentPath, nowPlayingIndex = 0)
+    }
+
+    /**
+     * Insert the bridge playlist immediately after the current track (D-07).
+     * PlayerConnection passed from composable — not stored in ViewModel (avoids Context leak).
+     */
+    fun onConfirmPlayNext(playerConnection: PlayerConnection) {
+        val items = _pendingPlaylistItems ?: return
+        _showQueueDialog.value = false
+        playerConnection.playNext(items)
+        _uiState.value = BridgeUiState.PlaylistReady(path = _currentPath, nowPlayingIndex = 0)
+    }
+
+    /**
+     * Dismiss the queue dialog without starting playback.
+     */
+    fun dismissQueueDialog() {
+        _showQueueDialog.value = false
     }
 
     /**
