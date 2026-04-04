@@ -123,13 +123,13 @@ Plans:
   2. Tapping "Random Bridge" picks two genre-opposite artists from Spotify liked songs and starts a bridge automatically
   3. Bridge artists in the path view show a "NEW" badge for artists not in the user's Spotify history and a "known" badge for familiar ones
   4. If Spotify is not connected or auth fails, all Bridge features still work — seed suggestions and Random Bridge are simply hidden
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 **UI hint**: yes
 
 Plans:
 - [x] 07-01-PLAN.md — BridgeViewModel data layer (seed suggestions, Jaccard random bridge, familiarity resolution, unit tests)
 - [ ] 07-02-PLAN.md — Seed suggestion chip row + Random Bridge FAB in BridgeScreen
-- [ ] 07-03-PLAN.md — Known/NEW familiarity badges in PathSheet + visual verification
+- [x] 07-03-PLAN.md — Known/NEW familiarity badges in PathSheet + visual verification
 
 ## Progress
 
@@ -144,4 +144,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 4. Artist Search + Bridge Trigger | 3/3 | Complete   | 2026-04-04 |
 | 5. Playlist Builder + Auto-Play | 2/2 | Complete   |  |
 | 6. Linear Path Result View | 0/2 | Not started | - |
-| 7. Spotify Integration | 1/3 | In Progress|  |
+| 7. Spotify Integration | 2/3 | In Progress|  |
