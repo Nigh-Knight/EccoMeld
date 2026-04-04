@@ -45,7 +45,14 @@ sealed class Screens(
         route = "library"
     )
 
+    object Bridge : Screens(
+        titleId = R.string.bridge,
+        iconIdInactive = R.drawable.bridge_outlined,
+        iconIdActive = R.drawable.bridge_filled,
+        route = "bridge"
+    )
+
     companion object {
-        val MainScreens = listOf(Home, Search, ListenTogether, Library)
+        val MainScreens = listOf(Home, Search, ListenTogether, Library, Bridge)
     }
 }

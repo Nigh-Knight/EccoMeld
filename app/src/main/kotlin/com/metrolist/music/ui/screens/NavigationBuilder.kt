@@ -62,6 +62,7 @@ import com.metrolist.music.ui.screens.settings.integrations.LastFMSettings
 import com.metrolist.music.ui.screens.settings.integrations.ListenTogetherSettings
 import com.metrolist.music.ui.screens.settings.integrations.SpotifyPreloadScreen
 import com.metrolist.music.ui.screens.settings.integrations.SpotifySettings
+import com.metrolist.music.ui.screens.bridge.BridgeScreen
 import com.metrolist.music.ui.screens.recognition.RecognitionScreen
 import com.metrolist.music.ui.screens.recognition.RecognitionHistoryScreen
 import com.metrolist.music.ui.screens.wrapped.WrappedScreen
@@ -108,6 +109,10 @@ fun NavGraphBuilder.navigationBuilder(
         route = "listen_together_from_topbar",
     ) {
         ListenTogetherScreen(navController, showTopBar = true)
+    }
+
+    composable(Screens.Bridge.route) {
+        BridgeScreen(navController = navController)
     }
 
     composable("history") {

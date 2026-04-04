@@ -569,6 +569,7 @@ class MainActivity : ComponentActivity() {
                         Screens.Home.route,
                         Screens.Library.route,
                         Screens.ListenTogether.route,
+                        Screens.Bridge.route,
                         "settings",
                     )
                 }
@@ -778,6 +779,7 @@ class MainActivity : ComponentActivity() {
                         Screens.Search.route -> R.string.search
                         Screens.Library.route -> R.string.filter_library
                         Screens.ListenTogether.route -> R.string.together
+                        Screens.Bridge.route -> R.string.bridge
                         else -> null
                     }
                 }
