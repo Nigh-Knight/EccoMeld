@@ -3,8 +3,11 @@ package com.metrolist.music.bridge
 import android.os.Handler
 import android.webkit.WebView
 import com.metrolist.lastfm.LastFM
+import com.metrolist.music.playback.BridgePlaylistBuilder
 import com.metrolist.music.ui.screens.bridge.BridgeUiState
+import com.metrolist.music.viewmodels.BridgeArtistInfo
 import com.metrolist.music.viewmodels.BridgeViewModel
+import com.metrolist.music.viewmodels.formatListeners
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -28,11 +31,15 @@ class BridgeViewModelTest {
      * [Rule 1 - Bug] MeldBridgeInterface constructs Handler(Looper.getMainLooper()) in its
      * init block, which throws RuntimeException in JVM unit tests (Android not mocked).
      * Using mock<MeldBridgeInterface>() avoids real construction — Mockito creates a subclass proxy.
+     *
+     * [Rule 1 - Bug] BridgeViewModel now requires BridgePlaylistBuilder; added mock here
+     * to keep existing tests compiling. mock-maker-inline allows mocking final classes.
      */
     private fun buildViewModel(): Pair<BridgeViewModel, WebView> {
         val mockWebView = mock<WebView>()
         val mockBridgeInterface = mock<MeldBridgeInterface>()
-        val viewModel = BridgeViewModel(mockWebView, mockBridgeInterface)
+        val mockPlaylistBuilder = mock<BridgePlaylistBuilder>()
+        val viewModel = BridgeViewModel(mockWebView, mockBridgeInterface, mockPlaylistBuilder)
         return viewModel to mockWebView
     }
 
@@ -118,6 +125,7 @@ class BridgeViewModelTest {
         // Looper.getMainLooper() in JVM unit tests, and captures the onStateChange callback
         // so we can invoke it synchronously.
         val mockWebView = mock<WebView>()
+        val mockPlaylistBuilder = mock<BridgePlaylistBuilder>()
         var capturedCallback: ((BridgeUiState) -> Unit)? = null
         val noopHandler = mock<Handler>()
         val bridgeInterfaceStub = object : MeldBridgeInterface() {
@@ -126,7 +134,7 @@ class BridgeViewModelTest {
                 get() = capturedCallback ?: {}
                 set(value) { capturedCallback = value }
         }
-        val viewModel = BridgeViewModel(mockWebView, bridgeInterfaceStub)
+        val viewModel = BridgeViewModel(mockWebView, bridgeInterfaceStub, mockPlaylistBuilder)
 
         // Simulate bridge search starting by injecting Searching state directly via the callback
         // (avoids calling startBridge() which would trigger Handler(Looper.getMainLooper()))
@@ -186,5 +194,126 @@ class BridgeViewModelTest {
             viewModel.uiState.value,
         )
         assertFalse("isRunning should be false", viewModel.isRunning)
+    }
+
+    // --- formatListeners tests (BRDG-05) ---
+
+    @Test
+    fun formatListeners_below_1k_returns_raw() {
+        assertEquals("0 listeners", formatListeners(0L))
+        assertEquals("847 listeners", formatListeners(847L))
+        assertEquals("999 listeners", formatListeners(999L))
+    }
+
+    @Test
+    fun formatListeners_thousands_returns_K() {
+        assertEquals("1.2K listeners", formatListeners(1200L))
+        assertEquals("142.3K listeners", formatListeners(142300L))
+        assertEquals("999.9K listeners", formatListeners(999900L))
+    }
+
+    @Test
+    fun formatListeners_millions_returns_M() {
+        assertEquals("1.2M listeners", formatListeners(1200000L))
+        assertEquals("5.4M listeners", formatListeners(5432100L))
+    }
+
+    // --- onNowPlayingArtistChanged tests (BRDG-05) ---
+
+    @Test
+    fun onNowPlayingArtistChanged_updates_index_case_insensitive() {
+        // Set up: need to get PlaylistReady state with known path
+        val mockWebView = mock<WebView>()
+        val mockPlaylistBuilder = mock<BridgePlaylistBuilder>()
+        var capturedCallback: ((BridgeUiState) -> Unit)? = null
+        val noopHandler = mock<Handler>()
+        val bridgeInterfaceStub = object : MeldBridgeInterface() {
+            override val mainHandler: Handler get() = noopHandler
+            override var onStateChange: (BridgeUiState) -> Unit
+                get() = capturedCallback ?: {}
+                set(value) { capturedCallback = value }
+        }
+        val viewModel = BridgeViewModel(mockWebView, bridgeInterfaceStub, mockPlaylistBuilder)
+
+        // Inject PlaylistReady state with a known path via reflection on _currentPath
+        // and directly set _uiState to PlaylistReady
+        val path = listOf("Radiohead", "Thom Yorke")
+        val currentPathField = BridgeViewModel::class.java.getDeclaredField("_currentPath")
+        currentPathField.isAccessible = true
+        currentPathField.set(viewModel, path)
+
+        val uiStateField = BridgeViewModel::class.java.getDeclaredField("_uiState")
+        uiStateField.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val uiState = uiStateField.get(viewModel) as kotlinx.coroutines.flow.MutableStateFlow<BridgeUiState>
+        uiState.value = BridgeUiState.PlaylistReady(path = path, nowPlayingIndex = 0)
+
+        // Exact match -> index 0
+        viewModel.onNowPlayingArtistChanged("Radiohead")
+        assertEquals(0, (viewModel.uiState.value as BridgeUiState.PlaylistReady).nowPlayingIndex)
+
+        // Case-insensitive match -> index 1
+        viewModel.onNowPlayingArtistChanged("thom yorke")
+        assertEquals(1, (viewModel.uiState.value as BridgeUiState.PlaylistReady).nowPlayingIndex)
+    }
+
+    @Test
+    fun onNowPlayingArtistChanged_no_op_on_miss() {
+        val mockWebView = mock<WebView>()
+        val mockPlaylistBuilder = mock<BridgePlaylistBuilder>()
+        var capturedCallback: ((BridgeUiState) -> Unit)? = null
+        val noopHandler = mock<Handler>()
+        val bridgeInterfaceStub = object : MeldBridgeInterface() {
+            override val mainHandler: Handler get() = noopHandler
+            override var onStateChange: (BridgeUiState) -> Unit
+                get() = capturedCallback ?: {}
+                set(value) { capturedCallback = value }
+        }
+        val viewModel = BridgeViewModel(mockWebView, bridgeInterfaceStub, mockPlaylistBuilder)
+
+        val path = listOf("Radiohead", "Thom Yorke")
+        val currentPathField = BridgeViewModel::class.java.getDeclaredField("_currentPath")
+        currentPathField.isAccessible = true
+        currentPathField.set(viewModel, path)
+
+        val uiStateField = BridgeViewModel::class.java.getDeclaredField("_uiState")
+        uiStateField.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val uiState = uiStateField.get(viewModel) as kotlinx.coroutines.flow.MutableStateFlow<BridgeUiState>
+        uiState.value = BridgeUiState.PlaylistReady(path = path, nowPlayingIndex = 1)
+
+        // Unknown artist — must not change nowPlayingIndex
+        viewModel.onNowPlayingArtistChanged("Unknown Band")
+        assertEquals(1, (viewModel.uiState.value as BridgeUiState.PlaylistReady).nowPlayingIndex)
+    }
+
+    @Test
+    fun onNowPlayingArtistChanged_trims_whitespace() {
+        val mockWebView = mock<WebView>()
+        val mockPlaylistBuilder = mock<BridgePlaylistBuilder>()
+        var capturedCallback: ((BridgeUiState) -> Unit)? = null
+        val noopHandler = mock<Handler>()
+        val bridgeInterfaceStub = object : MeldBridgeInterface() {
+            override val mainHandler: Handler get() = noopHandler
+            override var onStateChange: (BridgeUiState) -> Unit
+                get() = capturedCallback ?: {}
+                set(value) { capturedCallback = value }
+        }
+        val viewModel = BridgeViewModel(mockWebView, bridgeInterfaceStub, mockPlaylistBuilder)
+
+        val path = listOf("Radiohead", "Thom Yorke")
+        val currentPathField = BridgeViewModel::class.java.getDeclaredField("_currentPath")
+        currentPathField.isAccessible = true
+        currentPathField.set(viewModel, path)
+
+        val uiStateField = BridgeViewModel::class.java.getDeclaredField("_uiState")
+        uiStateField.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        val uiState = uiStateField.get(viewModel) as kotlinx.coroutines.flow.MutableStateFlow<BridgeUiState>
+        uiState.value = BridgeUiState.PlaylistReady(path = path, nowPlayingIndex = 1)
+
+        // Whitespace-padded artist name -> still matches
+        viewModel.onNowPlayingArtistChanged(" Radiohead ")
+        assertEquals(0, (viewModel.uiState.value as BridgeUiState.PlaylistReady).nowPlayingIndex)
     }
 }
