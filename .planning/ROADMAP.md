@@ -12,7 +12,7 @@ EccoMeld adds Bridge Discovery to the existing Meld music client — a new tab w
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: WebView Foundation** - Bundle EccoPath as APK assets and verify IndexedDB-safe WebView serving
+- [x] **Phase 1: WebView Foundation** - Bundle EccoPath as APK assets and verify IndexedDB-safe WebView serving (completed 2026-04-04)
 - [ ] **Phase 2: Bridge Tab + State Model** - Add Bridge tab to navigation and define all UI states
 - [ ] **Phase 3: JS Bridge** - Wire MeldBridgeInterface so EccoPath can send bridge results to Kotlin
 - [ ] **Phase 4: Artist Search + Bridge Trigger** - Two artist inputs with Last.fm autocomplete, loading feedback, error states
@@ -31,12 +31,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. IndexedDB cache written during one session is readable in a fresh app restart (Last.fm cache survives)
   3. The app name displays as "EccoMeld" in the launcher and app bar
   4. WebView is served from `https://appassets.androidplatform.net/` — never `file://`
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 - [x] 01-01-PLAN.md — EccoPath submodule + Gradle build pipeline (static export to APK assets)
 - [x] 01-02-PLAN.md — Rebrand text and icon to EccoMeld
-- [ ] 01-03-PLAN.md — Hilt singleton WebView with WebViewAssetLoader (HTTPS origin + IndexedDB)
+- [x] 01-03-PLAN.md — Hilt singleton WebView with WebViewAssetLoader (HTTPS origin + IndexedDB)
 
 ### Phase 2: Bridge Tab + State Model
 **Goal**: A Bridge tab exists in bottom navigation and the full BridgeUiState sealed class is defined with all transitions stubbed out
@@ -115,7 +115,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. WebView Foundation | 2/3 | In Progress|  |
+| 1. WebView Foundation | 3/3 | Complete   | 2026-04-04 |
 | 2. Bridge Tab + State Model | 0/? | Not started | - |
 | 3. JS Bridge | 0/? | Not started | - |
 | 4. Artist Search + Bridge Trigger | 0/? | Not started | - |
