@@ -60,10 +60,10 @@ Plans:
   2. `MeldBridgeInterface.createPlaylist(json)` fires with valid JSON when EccoPath completes a bridge
   3. The JS callback dispatches to the main thread without crashing — verified under concurrent execution
   4. Bridge result JSON is logged to Timber and visible in Logcat for a known artist pair
-**Plans:** 3 plans
+**Plans:** 1/3 plans executed
 
 Plans:
-- [ ] 03-00-PLAN.md — Wave 0 test infrastructure (JUnit dependency + test stubs)
+- [x] 03-00-PLAN.md — Wave 0 test infrastructure (JUnit dependency + test stubs)
 - [ ] 03-01-PLAN.md — MeldBridgeInterface class + EccoPath window export + ProGuard keep rule
 - [ ] 03-02-PLAN.md — BridgeModule registration + BridgeViewModel startBridge() wiring
 
@@ -124,7 +124,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 |-------|----------------|--------|-----------|
 | 1. WebView Foundation | 3/3 | Complete   | 2026-04-04 |
 | 2. Bridge Tab + State Model | 0/1 | Not started | - |
-| 3. JS Bridge | 0/3 | Not started | - |
+| 3. JS Bridge | 1/3 | In Progress|  |
 | 4. Artist Search + Bridge Trigger | 0/? | Not started | - |
 | 5. Playlist Builder + Auto-Play | 0/? | Not started | - |
 | 6. Linear Path Result View | 0/? | Not started | - |
