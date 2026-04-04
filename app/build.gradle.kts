@@ -12,6 +12,7 @@ plugins {
     alias(libs.plugins.kotlin.ksp)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.serialization)
+    // protobuf plugin incompatible with AGP 9 — protoc runs as Exec task instead
 }
 
 val buildEccoPath by tasks.registering(Exec::class) {
@@ -37,10 +38,12 @@ val buildEccoPath by tasks.registering(Exec::class) {
             backup.copyTo(original, overwrite = true)
             backup.delete()
         }
-        exec {
-            workingDir = file("${rootProject.projectDir}/eccopath")
-            commandLine("node", "scripts/strip-crossorigin.mjs")
-        }
+        
+        ProcessBuilder("node", "scripts/strip-crossorigin.mjs")
+            .directory(file("${rootProject.projectDir}/eccopath"))
+            .inheritIO()
+            .start()
+            .waitFor()
     }
     inputs.dir("${rootProject.projectDir}/eccopath/lib")
     inputs.dir("${rootProject.projectDir}/eccopath/app")
@@ -223,6 +226,79 @@ android {
 
 tasks.named("preBuild").configure {
     dependsOn(copyEccoPathAssets)
+    dependsOn(generateProto)
+}
+
+val protocVersion = libs.versions.protobuf.get()
+
+val downloadProtoc by tasks.registering {
+    description = "Download protoc matching project protobuf version"
+    val protocDir = layout.buildDirectory.dir("protoc")
+    val protocBin = protocDir.map { it.file("bin/protoc") }
+    outputs.dir(protocDir)
+    doLast {
+        val dir = protocDir.get().asFile
+        if (protocBin.get().asFile.exists()) return@doLast
+        val osName = System.getProperty("os.name").lowercase()
+        val arch = System.getProperty("os.arch")
+        val platform = when {
+            osName.contains("linux") && arch == "amd64" -> "linux-x86_64"
+            osName.contains("linux") && arch == "aarch64" -> "linux-aarch_64"
+            osName.contains("mac") && arch == "aarch64" -> "osx-aarch_64"
+            osName.contains("mac") -> "osx-x86_64"
+            else -> error("Unsupported platform: $osName/$arch")
+        }
+        val zipFile = File(dir, "protoc.zip")
+        // Java protobuf runtime uses 4.x versioning; protoc releases use the base version without the leading "4."
+        val releaseVersion = protocVersion.removePrefix("4.")
+        val url = "https://github.com/protocolbuffers/protobuf/releases/download/v$releaseVersion/protoc-$releaseVersion-$platform.zip"
+        ant.invokeMethod("get", mapOf("src" to url, "dest" to zipFile))
+        ant.invokeMethod("unzip", mapOf("src" to zipFile, "dest" to dir))
+        zipFile.delete()
+        protocBin.get().asFile.setExecutable(true)
+    }
+}
+
+abstract class GenerateProtoTask @javax.inject.Inject constructor() : DefaultTask() {
+    @get:InputFile
+    abstract val protoFile: RegularFileProperty
+
+    @get:InputDirectory
+    abstract val protocDir: DirectoryProperty
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun generate() {
+        val javaOut = outputDir.get().asFile
+        javaOut.mkdirs()
+        val protocBin = protocDir.get().file("bin/protoc").asFile.absolutePath
+        val protoPath = protoFile.get().asFile
+        ProcessBuilder(
+            protocBin,
+            "--proto_path=${protoPath.parentFile.absolutePath}",
+            "--java_out=lite:${javaOut.absolutePath}",
+            protoPath.absolutePath
+        ).inheritIO().start().waitFor().let { exitCode ->
+            if (exitCode != 0) error("protoc failed with exit code $exitCode")
+        }
+    }
+}
+
+val generateProto by tasks.registering(GenerateProtoTask::class) {
+    description = "Generate Java lite protobuf classes from metroproto"
+    group = "protobuf"
+    dependsOn(downloadProtoc)
+    protoFile.set(file("${rootProject.projectDir}/metroproto/listentogether.proto"))
+    protocDir.set(layout.buildDirectory.dir("protoc"))
+    outputDir.set(layout.buildDirectory.dir("generated/source/proto/main/java"))
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.sources.java?.addGeneratedSourceDirectory(generateProto) { it.outputDir }
+    }
 }
 
 ksp {
@@ -316,4 +392,6 @@ dependencies {
     coreLibraryDesugaring(libs.desugaring)
 
     implementation(libs.timber)
+
+    testImplementation(libs.junit)
 }
