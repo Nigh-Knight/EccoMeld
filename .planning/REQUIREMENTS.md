@@ -20,7 +20,7 @@ Requirements for MVP (P0) release. Each maps to roadmap phases.
 - [x] **BRDG-02**: Bridge computation runs via EccoPath WebView beam search when user taps "Bridge"
 - [x] **BRDG-03**: JS bridge interface (MeldBridge) sends bridge path result from EccoPath to Kotlin
 - [x] **BRDG-04**: User sees meaningful loading feedback during bridge computation ("Found 3 of 6 hops...")
-- [ ] **BRDG-05**: User sees a linear path result view — seed at top, target at bottom, bridge artists between with genre tags and listener counts
+- [x] **BRDG-05**: User sees a linear path result view — seed at top, target at bottom, bridge artists between with genre tags and listener counts
 - [x] **BRDG-06**: User sees a clear error message when no path is found, with suggestion to try different artists
 - [x] **BRDG-07**: Bridge tab appears in bottom navigation alongside existing Meld tabs
 
@@ -32,7 +32,7 @@ Requirements for MVP (P0) release. Each maps to roadmap phases.
 - [x] **PLAY-04**: YT Music match failures skip silently — unavailable tracks don't break playlist flow
 - [x] **PLAY-05**: Bridge playlist feeds into existing Meld queue and plays via existing player bar
 - [ ] **PLAY-06**: Path result view persists and remains accessible while bridge playlist plays
-- [ ] **PLAY-07**: Currently-playing bridge artist is highlighted in the path result view
+- [x] **PLAY-07**: Currently-playing bridge artist is highlighted in the path result view
 
 ### Spotify Integration
 
@@ -102,9 +102,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PLAY-03 | Phase 5 | Complete |
 | PLAY-04 | Phase 5 | Complete |
 | PLAY-05 | Phase 5 | Complete |
-| BRDG-05 | Phase 6 | Pending |
+| BRDG-05 | Phase 6 | Complete |
 | PLAY-06 | Phase 6 | Pending |
-| PLAY-07 | Phase 6 | Pending |
+| PLAY-07 | Phase 6 | Complete |
 | SPOT-01 | Phase 7 | Pending |
 | SPOT-02 | Phase 7 | Pending |
 | SPOT-03 | Phase 7 | Pending |

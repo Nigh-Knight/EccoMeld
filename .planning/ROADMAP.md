@@ -111,7 +111,7 @@ Plans:
 **Plans:** 2 plans
 
 Plans:
-- [ ] 06-01-PLAN.md — LastFM artist.getInfo API + BridgeViewModel metadata/now-playing logic
+- [x] 06-01-PLAN.md — LastFM artist.getInfo API + BridgeViewModel metadata/now-playing logic
 - [ ] 06-02-PLAN.md — PathSheet composable + BridgeScreen BottomSheet integration + visual verification
 
 ### Phase 7: Spotify Integration
