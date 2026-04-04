@@ -21,6 +21,8 @@ import com.metrolist.music.ui.screens.bridge.BridgeUiState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,6 +31,29 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import timber.log.Timber
 import javax.inject.Inject
+
+/**
+ * Per-artist metadata fetched from Last.fm after a bridge path is found.
+ * Populated by [BridgeViewModel.fetchArtistMetadata] (BRDG-05).
+ */
+data class BridgeArtistInfo(
+    val name: String,
+    val tags: List<String>,
+    val listenerCount: Long,
+    val formattedListeners: String,
+)
+
+/**
+ * Format a raw listener count into a human-readable string.
+ * - < 1,000: raw count ("847 listeners")
+ * - 1,000–999,999: K with one decimal ("1.2K listeners")
+ * - >= 1,000,000: M with one decimal ("1.2M listeners")
+ */
+fun formatListeners(count: Long): String = when {
+    count < 1_000L -> "$count listeners"
+    count < 1_000_000L -> "${"%.1f".format(count / 1_000.0)}K listeners"
+    else -> "${"%.1f".format(count / 1_000_000.0)}M listeners"
+}
 
 @HiltViewModel
 class BridgeViewModel @Inject constructor(
@@ -57,6 +82,9 @@ class BridgeViewModel @Inject constructor(
 
     private val _buildFailed = MutableStateFlow(false)
     val buildFailed: StateFlow<Boolean> = _buildFailed.asStateFlow()
+
+    private val _artistMetadata = MutableStateFlow<Map<String, BridgeArtistInfo>>(emptyMap())
+    val artistMetadata: StateFlow<Map<String, BridgeArtistInfo>> = _artistMetadata.asStateFlow()
 
     private var _pendingPlaylistItems: List<MediaItem>? = null
     private var _currentPath: List<String> = emptyList()
@@ -108,6 +136,7 @@ class BridgeViewModel @Inject constructor(
             _uiState.value = newState
             if (newState is BridgeUiState.PathFound) {
                 viewModelScope.launch { buildPlaylist(newState.path) }
+                viewModelScope.launch(Dispatchers.IO) { fetchArtistMetadata(newState.path) }
             }
         }
     }
@@ -118,6 +147,7 @@ class BridgeViewModel @Inject constructor(
      */
     private suspend fun buildPlaylist(path: List<String>) {
         _currentPath = path
+        _artistMetadata.value = emptyMap()
         _isBuilding.value = true
         _buildFailed.value = false
         try {
@@ -196,6 +226,52 @@ class BridgeViewModel @Inject constructor(
         mainHandler.post {
             webView.evaluateJavascript(script, null)
         }
+    }
+
+    /**
+     * Fetch Last.fm artist.getInfo in parallel for all artists in [path].
+     * Populates [_artistMetadata] with tags and formatted listener counts (BRDG-05).
+     * Missing or failed artists are silently skipped — UI shows empty fallback.
+     */
+    private suspend fun fetchArtistMetadata(path: List<String>) {
+        val results = path.map { artist ->
+            viewModelScope.async(Dispatchers.IO) {
+                LastFM.getArtistInfo(artist)
+                    .getOrNull()
+                    ?.let { resp ->
+                        artist to BridgeArtistInfo(
+                            name = resp.artist.name.ifEmpty { artist },
+                            tags = resp.artist.tags.tag.map { it.name },
+                            listenerCount = resp.artist.stats.listeners.toLongOrNull() ?: 0L,
+                            formattedListeners = formatListeners(resp.artist.stats.listeners.toLongOrNull() ?: 0L),
+                        )
+                    }
+            }
+        }.awaitAll()
+        _artistMetadata.value = results.filterNotNull().toMap()
+    }
+
+    /**
+     * Called whenever the now-playing media item's artist name changes.
+     * Finds the artist in the current path via case-insensitive, trimmed match and updates
+     * [BridgeUiState.PlaylistReady.nowPlayingIndex] accordingly (BRDG-05, D-05).
+     *
+     * No-op if the artist is not found in the path — preserves the last known highlight.
+     * No-op if the current state is not [BridgeUiState.PlaylistReady].
+     */
+    fun onNowPlayingArtistChanged(artistName: String) {
+        val path = _currentPath
+        if (path.isEmpty()) return
+        val idx = path.indexOfFirst {
+            it.trim().equals(artistName.trim(), ignoreCase = true)
+        }
+        if (idx >= 0) {
+            val current = _uiState.value
+            if (current is BridgeUiState.PlaylistReady && current.nowPlayingIndex != idx) {
+                _uiState.value = current.copy(nowPlayingIndex = idx)
+            }
+        }
+        // No-op when idx == -1: preserve last known highlight (per D-05)
     }
 
     /**
