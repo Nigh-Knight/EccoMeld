@@ -36,9 +36,9 @@ Requirements for MVP (P0) release. Each maps to roadmap phases.
 
 ### Spotify Integration
 
-- [ ] **SPOT-01**: User's Spotify liked artists appear as quick-pick seed suggestions below From/To inputs
-- [ ] **SPOT-02**: Random Bridge button picks two genre-opposite artists from Spotify liked songs via Tag Jaccard distance
-- [ ] **SPOT-03**: Bridge artists in path view show "known" or "NEW" badge based on user's Spotify listening history
+- [x] **SPOT-01**: User's Spotify liked artists appear as quick-pick seed suggestions below From/To inputs
+- [x] **SPOT-02**: Random Bridge button picks two genre-opposite artists from Spotify liked songs via Tag Jaccard distance
+- [x] **SPOT-03**: Bridge artists in path view show "known" or "NEW" badge based on user's Spotify listening history
 
 ## v2 Requirements
 
@@ -105,9 +105,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | BRDG-05 | Phase 6 | Complete |
 | PLAY-06 | Phase 6 | Complete |
 | PLAY-07 | Phase 6 | Complete |
-| SPOT-01 | Phase 7 | Pending |
-| SPOT-02 | Phase 7 | Pending |
-| SPOT-03 | Phase 7 | Pending |
+| SPOT-01 | Phase 7 | Complete |
+| SPOT-02 | Phase 7 | Complete |
+| SPOT-03 | Phase 7 | Complete |
 
 **Coverage:**
 - v1 requirements: 21 total
