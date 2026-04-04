@@ -128,7 +128,7 @@ Plans:
 
 Plans:
 - [x] 07-01-PLAN.md — BridgeViewModel data layer (seed suggestions, Jaccard random bridge, familiarity resolution, unit tests)
-- [ ] 07-02-PLAN.md — Seed suggestion chip row + Random Bridge FAB in BridgeScreen
+- [x] 07-02-PLAN.md — Seed suggestion chip row + Random Bridge FAB in BridgeScreen
 - [x] 07-03-PLAN.md — Known/NEW familiarity badges in PathSheet + visual verification
 
 ## Progress
