@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: WebView Foundation** - Bundle EccoPath as APK assets and verify IndexedDB-safe WebView serving (completed 2026-04-04)
 - [ ] **Phase 2: Bridge Tab + State Model** - Add Bridge tab to navigation and define all UI states
-- [ ] **Phase 3: JS Bridge** - Wire MeldBridgeInterface so EccoPath can send bridge results to Kotlin
+- [x] **Phase 3: JS Bridge** - Wire MeldBridgeInterface so EccoPath can send bridge results to Kotlin (completed 2026-04-04)
 - [ ] **Phase 4: Artist Search + Bridge Trigger** - Two artist inputs with Last.fm autocomplete, loading feedback, error states
 - [ ] **Phase 5: Playlist Builder + Auto-Play** - Translate bridge path to YT Music tracks and auto-play through existing queue
 - [ ] **Phase 6: Linear Path Result View** - Visualize the bridge journey with genre tags, listener counts, and playback highlight
@@ -60,12 +60,12 @@ Plans:
   2. `MeldBridgeInterface.createPlaylist(json)` fires with valid JSON when EccoPath completes a bridge
   3. The JS callback dispatches to the main thread without crashing — verified under concurrent execution
   4. Bridge result JSON is logged to Timber and visible in Logcat for a known artist pair
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 - [x] 03-00-PLAN.md — Wave 0 test infrastructure (JUnit dependency + test stubs)
 - [x] 03-01-PLAN.md — MeldBridgeInterface class + EccoPath window export + ProGuard keep rule
-- [ ] 03-02-PLAN.md — BridgeModule registration + BridgeViewModel startBridge() wiring
+- [x] 03-02-PLAN.md — BridgeModule registration + BridgeViewModel startBridge() wiring
 
 ### Phase 4: Artist Search + Bridge Trigger
 **Goal**: Users can enter two artists, start a bridge, see meaningful progress feedback, and see a clear error if no path is found
@@ -124,7 +124,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 |-------|----------------|--------|-----------|
 | 1. WebView Foundation | 3/3 | Complete   | 2026-04-04 |
 | 2. Bridge Tab + State Model | 0/1 | Not started | - |
-| 3. JS Bridge | 2/3 | In Progress|  |
+| 3. JS Bridge | 3/3 | Complete   | 2026-04-04 |
 | 4. Artist Search + Bridge Trigger | 0/? | Not started | - |
 | 5. Playlist Builder + Auto-Play | 0/? | Not started | - |
 | 6. Linear Path Result View | 0/? | Not started | - |

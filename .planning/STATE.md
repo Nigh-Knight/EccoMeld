@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 03-js-bridge/03-01-PLAN.md
-last_updated: "2026-04-04T09:01:55.615Z"
+status: verifying
+stopped_at: Completed 03-js-bridge/03-02-PLAN.md
+last_updated: "2026-04-04T09:05:49.797Z"
 last_activity: 2026-04-04
 progress:
   total_phases: 7
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 7
-  completed_plans: 6
+  completed_plans: 7
   percent: 100
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-04-04)
 
 Phase: 03 (js-bridge) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-04-04
 
 Progress: [████████████████████] 4/4 plans (100%)
@@ -58,6 +58,7 @@ Progress: [████████████████████] 4/4 pla
 | Phase 02-bridge-tab-state-model P01 | 5min | 2 tasks | 8 files |
 | Phase 03-js-bridge P00 | 1min | 2 tasks | 3 files |
 | Phase 03-js-bridge P01 | 3min | 2 tasks | 3 files |
+| Phase 03-js-bridge P02 | 5min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -83,6 +84,8 @@ Recent decisions affecting current work:
 - [Phase 03-js-bridge]: @Ignore chosen over failing assertions for Wave 0 stubs — stubs compile clean and report as skipped not failures
 - [Phase 03-js-bridge]: MeldBridgeInterface uses mutable var callbacks (not constructor params) — Hilt constructs singleton before BridgeViewModel exists
 - [Phase 03-js-bridge]: window.__eccoFindBridge assigned in useEffect after React hydration, onBridgeReady() called as deterministic readiness signal (no polling)
+- [Phase 03-js-bridge]: BRIDGE_GLUE_JS uses .then()/.catch() not async/await — injected JS via evaluateJavascript has inconsistent async function support on some Android WebView versions
+- [Phase 03-js-bridge]: isRunning is a computed property from _uiState, not a separate flag — stays in sync with MeldBridgeInterface callbacks automatically
 
 ### Pending Todos
 
@@ -97,6 +100,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-04T09:01:55.611Z
-Stopped at: Completed 03-js-bridge/03-01-PLAN.md
+Last session: 2026-04-04T09:05:49.793Z
+Stopped at: Completed 03-js-bridge/03-02-PLAN.md
 Resume file: None
