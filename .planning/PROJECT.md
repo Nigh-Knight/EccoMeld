@@ -39,7 +39,8 @@ Discover music you didn't know you wanted through meaningful, human-like genre b
 
 <!-- New bridge discovery features — P0 MVP scope -->
 
-- [ ] Bridge tab in bottom navigation — two search inputs (From/To artist)
+- [x] Bridge tab in bottom navigation with state model — Validated in Phase 2
+- [ ] Bridge tab artist search inputs (From/To artist)
 - [ ] WebView bridge computation — bundled EccoPath (git submodule) runs beam search locally
 - [ ] JS bridge interface — MeldBridge.createPlaylist(json) sends bridge path to Kotlin
 - [ ] Linear path result view — seed at top, target at bottom, bridge artists between with genre tags and listener counts
@@ -126,4 +127,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-04 after Phase 1 completion — WebView Foundation*
+*Last updated: 2026-04-04 after Phase 2 completion — Bridge Tab + State Model*
