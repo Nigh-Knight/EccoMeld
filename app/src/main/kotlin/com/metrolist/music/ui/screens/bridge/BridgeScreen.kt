@@ -186,6 +186,8 @@ fun BridgeScreen(navController: NavController) {
     val isSearching = uiState is BridgeUiState.Searching
     val artistMetadata by viewModel.artistMetadata.collectAsState()
 
+    val artistFamiliarity by viewModel.artistFamiliarity.collectAsState()
+
     val playerConnection = LocalPlayerConnection.current
     val isBuilding by viewModel.isBuilding.collectAsState()
     val showQueueDialog by viewModel.showQueueDialog.collectAsState()
@@ -473,6 +475,7 @@ fun BridgeScreen(navController: NavController) {
                     path = path,
                     artistMetadata = artistMetadata,
                     nowPlayingIndex = nowPlayingIndex,
+                    familiarityMap = artistFamiliarity,
                 )
             }
         }

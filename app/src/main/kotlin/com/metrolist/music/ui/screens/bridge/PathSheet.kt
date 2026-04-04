@@ -41,6 +41,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.metrolist.music.R
+import com.metrolist.music.viewmodels.ArtistFamiliarity
 import com.metrolist.music.viewmodels.BridgeArtistInfo
 
 /**
@@ -54,6 +55,7 @@ fun PathSheet(
     path: List<String>,
     artistMetadata: Map<String, BridgeArtistInfo>,
     nowPlayingIndex: Int,
+    familiarityMap: Map<String, ArtistFamiliarity> = emptyMap(),
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -90,7 +92,12 @@ fun PathSheet(
             itemsIndexed(path) { index, artistName ->
                 val info = artistMetadata[artistName]
                 val isNowPlaying = index == nowPlayingIndex
-                PathNodeRow(artistName = artistName, info = info, isNowPlaying = isNowPlaying)
+                PathNodeRow(
+                    artistName = artistName,
+                    info = info,
+                    isNowPlaying = isNowPlaying,
+                    familiarity = familiarityMap[artistName],
+                )
                 if (index < path.lastIndex) {
                     VerticalConnectorLine()
                 }
@@ -108,6 +115,7 @@ fun PathNodeRow(
     artistName: String,
     info: BridgeArtistInfo?,
     isNowPlaying: Boolean,
+    familiarity: ArtistFamiliarity? = null,
 ) {
     val borderColor by animateColorAsState(
         targetValue = if (isNowPlaying) MaterialTheme.colorScheme.primary else Color.Transparent,
@@ -177,6 +185,10 @@ fun PathNodeRow(
                         tint = MaterialTheme.colorScheme.primary,
                     )
                 }
+                if (familiarity != null) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    ArtistFamiliarityBadge(familiarity)
+                }
             }
 
             // Listener count
@@ -224,6 +236,42 @@ fun GenreTagChip(tag: String) {
             text = tag,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary,
+        )
+    }
+}
+
+/**
+ * A small pill badge indicating artist familiarity.
+ * "NEW" (primary color) for undiscovered artists; "known" (secondary at 0.7f alpha) for familiar ones.
+ * Shown inline after the artist name in [PathNodeRow].
+ * Content description expands the abbreviated text for accessibility (UI-SPEC Known/NEW Badges).
+ */
+@Composable
+private fun ArtistFamiliarityBadge(familiarity: ArtistFamiliarity) {
+    val isNew = familiarity == ArtistFamiliarity.NEW
+    Box(
+        modifier = Modifier
+            .height(16.dp)
+            .background(
+                color = if (isNew)
+                    MaterialTheme.colorScheme.primary
+                else
+                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.7f),
+                shape = RoundedCornerShape(8.dp),
+            )
+            .padding(horizontal = 8.dp)
+            .semantics {
+                contentDescription = if (isNew) "New artist" else "Familiar artist"
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = stringResource(if (isNew) R.string.bridge_badge_new else R.string.bridge_badge_known),
+            style = MaterialTheme.typography.labelSmall,
+            color = if (isNew)
+                MaterialTheme.colorScheme.onPrimary
+            else
+                MaterialTheme.colorScheme.onSecondary,
         )
     }
 }
