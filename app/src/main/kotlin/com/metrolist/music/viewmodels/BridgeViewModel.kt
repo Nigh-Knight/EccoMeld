@@ -9,13 +9,19 @@ import android.os.Handler
 import android.os.Looper
 import android.webkit.WebView
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.metrolist.lastfm.LastFM
 import com.metrolist.music.bridge.MeldBridgeInterface
 import com.metrolist.music.di.BridgeWebView
 import com.metrolist.music.ui.screens.bridge.BridgeUiState
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 import timber.log.Timber
 import javax.inject.Inject
@@ -35,6 +41,35 @@ class BridgeViewModel @Inject constructor(
      */
     val isRunning: Boolean
         get() = _uiState.value is BridgeUiState.Searching
+
+    // --- Autocomplete state (BRDG-01, D-01, D-02, D-05) ---
+
+    private val _fromQuery = MutableStateFlow("")
+    val fromQuery: StateFlow<String> = _fromQuery.asStateFlow()
+
+    private val _toQuery = MutableStateFlow("")
+    val toQuery: StateFlow<String> = _toQuery.asStateFlow()
+
+    private val _fromGhostSuffix = MutableStateFlow("")
+    val fromGhostSuffix: StateFlow<String> = _fromGhostSuffix.asStateFlow()
+
+    private val _toGhostSuffix = MutableStateFlow("")
+    val toGhostSuffix: StateFlow<String> = _toGhostSuffix.asStateFlow()
+
+    // Full suggestion name when ghost is showing (for confirm action)
+    private var _fromGhostFull = ""
+    private var _toGhostFull = ""
+
+    // Confirmed artist names passed to startBridge()
+    private val _fromConfirmedArtist = MutableStateFlow("")
+    val fromConfirmedArtist: StateFlow<String> = _fromConfirmedArtist.asStateFlow()
+
+    private val _toConfirmedArtist = MutableStateFlow("")
+    val toConfirmedArtist: StateFlow<String> = _toConfirmedArtist.asStateFlow()
+
+    // Debounce jobs (D-02: 300ms debounce matching EccoPath)
+    private var fromSearchJob: Job? = null
+    private var toSearchJob: Job? = null
 
     init {
         // Wire MeldBridgeInterface callbacks to update _uiState.
@@ -78,5 +113,122 @@ class BridgeViewModel @Inject constructor(
         if (!isRunning) {
             _uiState.value = BridgeUiState.Idle
         }
+    }
+
+    /**
+     * Called on every keystroke in the "From" input. Debounces 300ms before
+     * querying LastFM.searchArtists() for ghost-text autocomplete (D-02).
+     * Clears confirmed artist when user edits (prevents stale confirmed name).
+     */
+    fun onFromQueryChanged(query: String) {
+        _fromQuery.value = query
+        _fromConfirmedArtist.value = ""
+        fromSearchJob?.cancel()
+        if (query.isBlank()) {
+            _fromGhostSuffix.value = ""
+            _fromGhostFull = ""
+            return
+        }
+        fromSearchJob = viewModelScope.launch(Dispatchers.IO) {
+            delay(300L)
+            LastFM.searchArtists(query, 1)
+                .onSuccess { response ->
+                    val suggestion = response.results.artistmatches.artist.firstOrNull()?.name ?: ""
+                    if (suggestion.startsWith(query, ignoreCase = true)) {
+                        _fromGhostSuffix.value = suggestion.drop(query.length)
+                        _fromGhostFull = suggestion
+                    } else {
+                        _fromGhostSuffix.value = ""
+                        _fromGhostFull = ""
+                    }
+                }
+                .onFailure {
+                    _fromGhostSuffix.value = ""
+                    _fromGhostFull = ""
+                }
+        }
+    }
+
+    /**
+     * Called on every keystroke in the "To" input. Same debounce pattern as onFromQueryChanged.
+     */
+    fun onToQueryChanged(query: String) {
+        _toQuery.value = query
+        _toConfirmedArtist.value = ""
+        toSearchJob?.cancel()
+        if (query.isBlank()) {
+            _toGhostSuffix.value = ""
+            _toGhostFull = ""
+            return
+        }
+        toSearchJob = viewModelScope.launch(Dispatchers.IO) {
+            delay(300L)
+            LastFM.searchArtists(query, 1)
+                .onSuccess { response ->
+                    val suggestion = response.results.artistmatches.artist.firstOrNull()?.name ?: ""
+                    if (suggestion.startsWith(query, ignoreCase = true)) {
+                        _toGhostSuffix.value = suggestion.drop(query.length)
+                        _toGhostFull = suggestion
+                    } else {
+                        _toGhostSuffix.value = ""
+                        _toGhostFull = ""
+                    }
+                }
+                .onFailure {
+                    _toGhostSuffix.value = ""
+                    _toGhostFull = ""
+                }
+        }
+    }
+
+    /**
+     * Confirm the "From" ghost suggestion — fills input with full artist name (D-05).
+     * If ghost is stale (doesn't match current input), falls back to raw input.
+     */
+    fun confirmFrom() {
+        val current = _fromQuery.value
+        val full = _fromGhostFull
+        if (full.isNotEmpty() && full.startsWith(current, ignoreCase = true)) {
+            _fromQuery.value = full
+            _fromConfirmedArtist.value = full
+        } else {
+            _fromConfirmedArtist.value = current
+        }
+        _fromGhostSuffix.value = ""
+        _fromGhostFull = ""
+        fromSearchJob?.cancel()
+    }
+
+    /**
+     * Confirm the "To" ghost suggestion — same pattern as confirmFrom().
+     */
+    fun confirmTo() {
+        val current = _toQuery.value
+        val full = _toGhostFull
+        if (full.isNotEmpty() && full.startsWith(current, ignoreCase = true)) {
+            _toQuery.value = full
+            _toConfirmedArtist.value = full
+        } else {
+            _toConfirmedArtist.value = current
+        }
+        _toGhostSuffix.value = ""
+        _toGhostFull = ""
+        toSearchJob?.cancel()
+    }
+
+    /**
+     * Trigger bridge search using confirmed artist names. Cancels any pending autocomplete.
+     * Called by "Find Bridge" button (D-09 — button only enabled when both confirmed and not running).
+     */
+    fun findBridge() {
+        val from = _fromConfirmedArtist.value
+        val to = _toConfirmedArtist.value
+        if (from.isBlank() || to.isBlank()) return
+        // Cancel pending autocomplete to avoid stale ghost during search
+        fromSearchJob?.cancel()
+        toSearchJob?.cancel()
+        _fromGhostSuffix.value = ""
+        _toGhostSuffix.value = ""
+        startBridge(from, to)
     }
 }
