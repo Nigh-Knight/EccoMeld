@@ -22,12 +22,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.collectAsState
@@ -47,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.metrolist.music.LocalPlayerAwareWindowInsets
+import com.metrolist.music.LocalPlayerConnection
 import com.metrolist.music.R
 import com.metrolist.music.viewmodels.BridgeViewModel
 
@@ -175,6 +178,37 @@ fun BridgeScreen(navController: NavController) {
     val toConfirmed by viewModel.toConfirmedArtist.collectAsState()
     val isSearching = uiState is BridgeUiState.Searching
 
+    val playerConnection = LocalPlayerConnection.current
+    val isBuilding by viewModel.isBuilding.collectAsState()
+    val showQueueDialog by viewModel.showQueueDialog.collectAsState()
+    val buildFailed by viewModel.buildFailed.collectAsState()
+
+    // Queue confirmation dialog — shown when playlist is ready (D-06)
+    if (showQueueDialog && playerConnection != null) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissQueueDialog() },
+            title = { Text(stringResource(R.string.bridge_queue_dialog_title)) },
+            text = {
+                Text(
+                    stringResource(
+                        R.string.bridge_queue_dialog_message,
+                        viewModel.pendingTrackCount
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.onConfirmReplaceQueue(playerConnection) }) {
+                    Text(stringResource(R.string.bridge_queue_replace))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.onConfirmPlayNext(playerConnection) }) {
+                    Text(stringResource(R.string.bridge_queue_play_next))
+                }
+            },
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -291,11 +325,35 @@ fun BridgeScreen(navController: NavController) {
                 }
             }
             is BridgeUiState.PathFound -> {
-                // Placeholder for Phase 6 path view
-                Text(
-                    text = stringResource(R.string.bridge_path_found_hint),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                if (isBuilding) {
+                    // Show building progress while tracks are being resolved
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(32.dp))
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = stringResource(R.string.bridge_building_playlist),
+                            style = MaterialTheme.typography.bodyLarge,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                } else if (buildFailed) {
+                    // All tracks failed to resolve — show informative message
+                    Text(
+                        text = stringResource(R.string.bridge_no_tracks_found),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                    )
+                } else {
+                    Text(
+                        text = stringResource(R.string.bridge_path_found_hint),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
             }
             is BridgeUiState.PlaylistReady -> {
                 // Placeholder for Phase 5 playlist view

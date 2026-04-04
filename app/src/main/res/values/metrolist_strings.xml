@@ -969,4 +969,10 @@
     <string name="bridge_error_no_path">No path found between these artists</string>
     <string name="bridge_error_suggestion">Try artists from different genres</string>
     <string name="bridge_progress_hops">Found %1$d of %2$d hops</string>
+    <string name="bridge_building_playlist">Building playlist\u2026</string>
+    <string name="bridge_queue_dialog_title">Bridge playlist ready</string>
+    <string name="bridge_queue_dialog_message">%1$d tracks ready to play. What would you like to do?</string>
+    <string name="bridge_queue_replace">Replace queue</string>
+    <string name="bridge_queue_play_next">Play next</string>
+    <string name="bridge_no_tracks_found">Couldn\'t find playable tracks for this bridge</string>
 </resources>
