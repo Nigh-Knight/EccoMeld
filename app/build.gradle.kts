@@ -14,6 +14,46 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+val buildEccoPath by tasks.registering(Exec::class) {
+    description = "Build EccoPath Next.js static export for Android"
+    group = "eccopath"
+    workingDir = file("${rootProject.projectDir}/eccopath")
+    // Next.js only reads next.config.ts by name — temporarily swap to Android config
+    doFirst {
+        val eccoDir = file("${rootProject.projectDir}/eccopath")
+        val original = file("$eccoDir/next.config.ts")
+        val backup = file("$eccoDir/next.config.ts.bak")
+        val android = file("$eccoDir/next.config.android.ts")
+        original.copyTo(backup, overwrite = true)
+        android.copyTo(original, overwrite = true)
+    }
+    commandLine("node", "${rootProject.projectDir}/eccopath/node_modules/.bin/next", "build")
+    doLast {
+        // Restore original config
+        val eccoDir = file("${rootProject.projectDir}/eccopath")
+        val original = file("$eccoDir/next.config.ts")
+        val backup = file("$eccoDir/next.config.ts.bak")
+        if (backup.exists()) {
+            backup.copyTo(original, overwrite = true)
+            backup.delete()
+        }
+        exec {
+            workingDir = file("${rootProject.projectDir}/eccopath")
+            commandLine("node", "scripts/strip-crossorigin.mjs")
+        }
+    }
+    inputs.dir("${rootProject.projectDir}/eccopath/lib")
+    inputs.dir("${rootProject.projectDir}/eccopath/app")
+    inputs.file("${rootProject.projectDir}/eccopath/next.config.android.ts")
+    outputs.dir("${rootProject.projectDir}/eccopath/out")
+}
+
+val copyEccoPathAssets by tasks.registering(Copy::class) {
+    dependsOn(buildEccoPath)
+    from("${rootProject.projectDir}/eccopath/out")
+    into("${projectDir}/src/main/assets/eccopath")
+}
+
 android {
     namespace = "com.metrolist.music"
     compileSdk = 36
@@ -179,6 +219,10 @@ android {
             excludes += "META-INF/io.netty.versions.properties"
         }
     }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(copyEccoPathAssets)
 }
 
 ksp {

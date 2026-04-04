@@ -114,3 +114,7 @@ app/src/main/cpp/coverart/
 
 # Internal development notes (moved to notes/ submodule)
 .spotify_gql_endpoints.json
+
+# EccoPath submodule build artifacts (generated at build time)
+eccopath/.next/
+eccopath/node_modules/
