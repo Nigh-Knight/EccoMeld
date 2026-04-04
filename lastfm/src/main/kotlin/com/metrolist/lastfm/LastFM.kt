@@ -1,5 +1,6 @@
 package com.metrolist.lastfm
 
+import com.metrolist.lastfm.models.ArtistTopTracksResponse
 import com.metrolist.lastfm.models.Authentication
 import com.metrolist.lastfm.models.LastFmError
 import com.metrolist.lastfm.models.TokenResponse
@@ -177,6 +178,26 @@ object LastFM {
                 }
             )
             parameter("format", "json")
+        }
+    }
+
+    /**
+     * Fetch top tracks for an artist. Unauthenticated GET — no API signature needed.
+     * Used by BridgePlaylistBuilder to get ranked track list per bridge artist (PLAY-02, D-01).
+     *
+     * @param artist Artist name
+     * @param limit Max tracks to return (default 50)
+     */
+    suspend fun getArtistTopTracks(artist: String, limit: Int = 50): Result<ArtistTopTracksResponse> {
+        if (API_KEY.isEmpty()) return Result.failure(IllegalStateException("LastFM not initialized"))
+        return runCatching {
+            client.get("https://ws.audioscrobbler.com/2.0/") {
+                parameter("method", "artist.getTopTracks")
+                parameter("artist", artist)
+                parameter("limit", limit.toString())
+                parameter("api_key", API_KEY)
+                parameter("format", "json")
+            }.body<ArtistTopTracksResponse>()
         }
     }
 
