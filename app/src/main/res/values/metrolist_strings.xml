@@ -952,4 +952,12 @@
         <item quantity="one">%d file</item>
         <item quantity="other">%d files</item>
     </plurals>
+
+    <!-- Bridge Discovery -->
+    <string name="bridge">Bridge</string>
+    <string name="bridge_idle_hint">Find a bridge between two artists</string>
+    <string name="bridge_searching_hint">Finding bridge\u2026</string>
+    <string name="bridge_path_found_hint">Bridge found</string>
+    <string name="bridge_playlist_ready_hint">Playing bridge playlist</string>
+    <string name="bridge_error_generic">No bridge found. Try different artists.</string>
 </resources>
