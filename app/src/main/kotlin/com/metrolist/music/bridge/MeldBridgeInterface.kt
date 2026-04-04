@@ -28,15 +28,19 @@ import com.metrolist.music.ui.screens.bridge.BridgeUiState
  * can set onReady independently (WARNING 1 from plan: Hilt constructs the singleton
  * before BridgeViewModel exists).
  */
-class MeldBridgeInterface {
+open class MeldBridgeInterface {
 
     /** Callback invoked on the main thread when bridge state changes. Set by BridgeViewModel. */
-    var onStateChange: (BridgeUiState) -> Unit = {}
+    open var onStateChange: (BridgeUiState) -> Unit = {}
 
     /** Callback invoked on the main thread when EccoPath JS signals it is ready. Set by BridgeModule (Plan 02). */
-    var onReady: () -> Unit = {}
+    open var onReady: () -> Unit = {}
 
-    private val mainHandler = Handler(Looper.getMainLooper())
+    /**
+     * Handler used to post state callbacks to the main thread.
+     * Overridable for testing (avoids Looper.getMainLooper() in JVM unit tests).
+     */
+    protected open val mainHandler: Handler by lazy { Handler(Looper.getMainLooper()) }
 
     /**
      * Called by EccoPath JS when the bridge path search completes.

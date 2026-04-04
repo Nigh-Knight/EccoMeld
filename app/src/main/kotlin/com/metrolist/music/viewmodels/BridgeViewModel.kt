@@ -71,6 +71,13 @@ class BridgeViewModel @Inject constructor(
     private var fromSearchJob: Job? = null
     private var toSearchJob: Job? = null
 
+    /**
+     * Handler for posting WebView calls to the main thread.
+     * Lazy so Looper.getMainLooper() is only accessed at first call (not during construction),
+     * enabling JVM unit tests to construct BridgeViewModel without Android mocks.
+     */
+    internal val mainHandler: Handler by lazy { Handler(Looper.getMainLooper()) }
+
     init {
         // Wire MeldBridgeInterface callbacks to update _uiState.
         // onStateChange is a mutable var property (not constructor param) — assigned post-construction
@@ -101,7 +108,7 @@ class BridgeViewModel @Inject constructor(
         val script = "window.startBridge($escapedStart, $escapedEnd)"
 
         // evaluateJavascript must run on main thread per Research Pitfall 4
-        Handler(Looper.getMainLooper()).post {
+        mainHandler.post {
             webView.evaluateJavascript(script, null)
         }
     }
