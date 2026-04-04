@@ -1,5 +1,6 @@
 package com.metrolist.lastfm
 
+import com.metrolist.lastfm.models.ArtistInfoResponse
 import com.metrolist.lastfm.models.ArtistSearchResponse
 import com.metrolist.lastfm.models.ArtistTopTracksResponse
 import com.metrolist.lastfm.models.Authentication
@@ -199,6 +200,25 @@ object LastFM {
                 parameter("api_key", API_KEY)
                 parameter("format", "json")
             }.body<ArtistTopTracksResponse>()
+        }
+    }
+
+    /**
+     * Fetch artist info (tags, listener count) for a single artist. Unauthenticated GET.
+     * Used by BridgeViewModel to populate per-artist metadata after bridge completes (BRDG-05).
+     *
+     * @param artist Artist name
+     */
+    suspend fun getArtistInfo(artist: String): Result<ArtistInfoResponse> {
+        if (API_KEY.isEmpty()) return Result.failure(IllegalStateException("LastFM not initialized"))
+        return runCatching {
+            client.get("https://ws.audioscrobbler.com/2.0/") {
+                parameter("method", "artist.getInfo")
+                parameter("artist", artist)
+                parameter("autocorrect", "1")
+                parameter("api_key", API_KEY)
+                parameter("format", "json")
+            }.body<ArtistInfoResponse>()
         }
     }
 
