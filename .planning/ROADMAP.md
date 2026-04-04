@@ -93,7 +93,7 @@ Plans:
   3. Tracks are matched to playable YT Music video IDs via fuzzy artist+title matching
   4. Tracks that fail YT Music matching are silently skipped — the playlist continues without error dialogs
   5. Bridge playlist plays through the existing Meld player bar (mini and expanded) with full controls
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [x] 05-01-PLAN.md — Last.fm getArtistTopTracks API + BridgePlaylistBuilder (track resolution pipeline)
@@ -108,8 +108,11 @@ Plans:
   2. Each bridge artist node shows genre tags and Last.fm listener counts
   3. The currently-playing bridge artist is visually highlighted in the path view
   4. Path view persists and remains accessible while the playlist is playing — navigating away and back does not lose it
-**Plans**: TBD
-**UI hint**: yes
+**Plans:** 2 plans
+
+Plans:
+- [ ] 06-01-PLAN.md — LastFM artist.getInfo API + BridgeViewModel metadata/now-playing logic
+- [ ] 06-02-PLAN.md — PathSheet composable + BridgeScreen BottomSheet integration + visual verification
 
 ### Phase 7: Spotify Integration
 **Goal**: Users with Spotify connected get personalized seed suggestions, a one-tap Random Bridge from their library, and known/unknown badges on bridge artists
@@ -134,6 +137,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 2. Bridge Tab + State Model | 0/1 | Not started | - |
 | 3. JS Bridge | 3/3 | Complete   | 2026-04-04 |
 | 4. Artist Search + Bridge Trigger | 3/3 | Complete   | 2026-04-04 |
-| 5. Playlist Builder + Auto-Play | 1/2 | In Progress|  |
-| 6. Linear Path Result View | 0/? | Not started | - |
+| 5. Playlist Builder + Auto-Play | 2/2 | Complete   |  |
+| 6. Linear Path Result View | 0/2 | Not started | - |
 | 7. Spotify Integration | 0/? | Not started | - |
