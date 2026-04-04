@@ -159,7 +159,7 @@ LazyRow(
 
 **Placement:** On each bridge artist node in the Phase 6 linear path view (bottom sheet or card row). Rendered as a small pill badge within the artist node composable.
 
-**Dimensions:** 16dp height, horizontal padding 6dp each side, corner radius 8dp (fully rounded pill). No icon — text only.
+**Dimensions:** 16dp height, horizontal padding 8dp each side, corner radius 8dp (fully rounded pill). No icon — text only.
 
 **"NEW" badge:**
 - Background: `colorScheme.primary` at alpha 1.0f
@@ -178,6 +178,8 @@ LazyRow(
 **Badge resolution:** Resolved in ViewModel, not in UI. `BridgeViewModel` emits a `Map<String, ArtistFamiliarity>` (where `ArtistFamiliarity` is `NEW` or `KNOWN`) alongside the path result. UI reads this map by artist name.
 
 ### Layout Structure (BridgeScreen additions)
+
+**Primary focal point:** Find Bridge button (inherited from Phase 4). **Secondary anchor:** Random Bridge FAB (bottom-end corner, persistent).
 
 The Phase 4 layout structure is extended as follows:
 
