@@ -46,8 +46,10 @@ Plans:
   1. Bridge tab appears alongside existing Meld tabs (Home, Search, Library, etc.) and is tappable
   2. Tapping Bridge navigates to BridgeScreen without affecting any existing tab or its back stack
   3. All BridgeUiState transitions (Idle, Searching, PathFound, PlaylistReady, Error) exist in code and BridgeScreen responds to each — even if most show placeholder content
-**Plans**: TBD
-**UI hint**: yes
+**Plans:** 1 plan
+
+Plans:
+- [ ] 02-01-PLAN.md — Bridge tab navigation wiring + BridgeUiState sealed class + BridgeScreen placeholder
 
 ### Phase 3: JS Bridge
 **Goal**: MeldBridgeInterface is registered and the round-trip from Kotlin → EccoPath JS → Kotlin callback works end-to-end with verified thread safety
@@ -116,7 +118,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. WebView Foundation | 3/3 | Complete   | 2026-04-04 |
-| 2. Bridge Tab + State Model | 0/? | Not started | - |
+| 2. Bridge Tab + State Model | 0/1 | Not started | - |
 | 3. JS Bridge | 0/? | Not started | - |
 | 4. Artist Search + Bridge Trigger | 0/? | Not started | - |
 | 5. Playlist Builder + Auto-Play | 0/? | Not started | - |
