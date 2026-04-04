@@ -95,6 +95,9 @@ output-metadata.json
 # VS Code
 .vscode/
 
+# Claude Code
+.claude/
+
 # Binary files and core dumps
 core
 core.*
