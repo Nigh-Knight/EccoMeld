@@ -26,11 +26,11 @@ Requirements for MVP (P0) release. Each maps to roadmap phases.
 
 ### Playback Integration
 
-- [ ] **PLAY-01**: Unified playlist auto-plays immediately when bridge is found — no manual "play" action needed
+- [x] **PLAY-01**: Unified playlist auto-plays immediately when bridge is found — no manual "play" action needed
 - [x] **PLAY-02**: Track selection per bridge artist: 2 popular tracks + 3-5 deep cuts, genre-transition order preserved
 - [x] **PLAY-03**: YT Music fuzzy matching resolves each bridge artist's tracks to playable YT Music video IDs
 - [x] **PLAY-04**: YT Music match failures skip silently — unavailable tracks don't break playlist flow
-- [ ] **PLAY-05**: Bridge playlist feeds into existing Meld queue and plays via existing player bar
+- [x] **PLAY-05**: Bridge playlist feeds into existing Meld queue and plays via existing player bar
 - [ ] **PLAY-06**: Path result view persists and remains accessible while bridge playlist plays
 - [ ] **PLAY-07**: Currently-playing bridge artist is highlighted in the path result view
 
@@ -97,11 +97,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | BRDG-01 | Phase 4 | Complete |
 | BRDG-04 | Phase 4 | Complete |
 | BRDG-06 | Phase 4 | Complete |
-| PLAY-01 | Phase 5 | Pending |
+| PLAY-01 | Phase 5 | Complete |
 | PLAY-02 | Phase 5 | Complete |
 | PLAY-03 | Phase 5 | Complete |
 | PLAY-04 | Phase 5 | Complete |
-| PLAY-05 | Phase 5 | Pending |
+| PLAY-05 | Phase 5 | Complete |
 | BRDG-05 | Phase 6 | Pending |
 | PLAY-06 | Phase 6 | Pending |
 | PLAY-07 | Phase 6 | Pending |

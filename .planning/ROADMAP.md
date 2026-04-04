@@ -97,7 +97,7 @@ Plans:
 
 Plans:
 - [x] 05-01-PLAN.md — Last.fm getArtistTopTracks API + BridgePlaylistBuilder (track resolution pipeline)
-- [ ] 05-02-PLAN.md — BridgeViewModel wiring + queue dialog + auto-play integration
+- [x] 05-02-PLAN.md — BridgeViewModel wiring + queue dialog + auto-play integration
 
 ### Phase 6: Linear Path Result View
 **Goal**: Users can see and follow their bridge journey in a persistent path view that highlights the currently-playing artist
