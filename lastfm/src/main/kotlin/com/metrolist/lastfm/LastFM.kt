@@ -1,5 +1,6 @@
 package com.metrolist.lastfm
 
+import com.metrolist.lastfm.models.ArtistSearchResponse
 import com.metrolist.lastfm.models.Authentication
 import com.metrolist.lastfm.models.LastFmError
 import com.metrolist.lastfm.models.TokenResponse
@@ -195,6 +196,28 @@ object LastFM {
     }
 
     fun isInitialized(): Boolean = API_KEY.isNotEmpty() && SECRET.isNotEmpty()
+
+    /**
+     * Search for artists by name. Unauthenticated GET — no API signature needed.
+     * Used by Bridge autocomplete (BRDG-01, D-01).
+     *
+     * @param query Partial artist name
+     * @param limit Max suggestions to return (default 1 for ghost-text)
+     */
+    suspend fun searchArtists(query: String, limit: Int = 1): Result<ArtistSearchResponse> {
+        if (API_KEY.isEmpty()) {
+            return Result.failure(IllegalStateException("LastFM not initialized"))
+        }
+        return runCatching {
+            client.get("https://ws.audioscrobbler.com/2.0/") {
+                parameter("method", "artist.search")
+                parameter("artist", query)
+                parameter("limit", limit.toString())
+                parameter("api_key", API_KEY)
+                parameter("format", "json")
+            }.body<ArtistSearchResponse>()
+        }
+    }
 
     const val DEFAULT_SCROBBLE_DELAY_PERCENT = 0.5f
     const val DEFAULT_SCROBBLE_MIN_SONG_DURATION = 30
