@@ -10,6 +10,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
+import android.webkit.WebView
 import android.widget.Toast
 import androidx.datastore.preferences.core.edit
 import coil3.ImageLoader
@@ -30,6 +31,7 @@ import com.metrolist.spotify.SpotifyAuth
 import com.metrolist.music.BuildConfig
 import com.metrolist.music.constants.*
 import com.metrolist.music.di.ApplicationScope
+import com.metrolist.music.di.BridgeWebView
 import com.metrolist.music.extensions.toEnum
 import com.metrolist.music.extensions.toInetSocketAddress
 import com.metrolist.music.utils.CrashHandler
@@ -38,7 +40,11 @@ import com.metrolist.music.utils.SpotifyTokenManager
 import com.metrolist.music.utils.cipher.PlayerJsFetcher
 import com.metrolist.music.utils.dataStore
 import com.metrolist.music.utils.reportException
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.android.HiltAndroidApp
+import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -54,6 +60,13 @@ import java.net.PasswordAuthentication
 import java.net.Proxy
 import java.util.Locale
 import javax.inject.Inject
+
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface BridgeWebViewEntryPoint {
+    @BridgeWebView
+    fun bridgeWebView(): WebView
+}
 
 @HiltAndroidApp
 class App : Application(), SingletonImageLoader.Factory {
@@ -72,6 +85,10 @@ class App : Application(), SingletonImageLoader.Factory {
         PlayerJsFetcher.initialize(this)
 
         Timber.plant(Timber.DebugTree())
+
+        // Eagerly initialize Bridge WebView on main thread (D-02)
+        EntryPointAccessors.fromApplication(this, BridgeWebViewEntryPoint::class.java).bridgeWebView()
+        Timber.d("Bridge WebView initialized eagerly")
 
         // تهيئة إعدادات التطبيق عند الإقلاع
         applicationScope.launch {
