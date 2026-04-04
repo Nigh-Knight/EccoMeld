@@ -80,7 +80,7 @@ Plans:
 
 Plans:
 - [x] 04-01-PLAN.md — Last.fm artist.search API + response model + test dependencies
-- [ ] 04-02-PLAN.md — BridgeViewModel autocomplete state + debounce + string resources + unit tests
+- [x] 04-02-PLAN.md — BridgeViewModel autocomplete state + debounce + string resources + unit tests
 - [ ] 04-03-PLAN.md — BridgeScreen UI rewrite (ghost text, progress, error, button states)
 
 ### Phase 5: Playlist Builder + Auto-Play
