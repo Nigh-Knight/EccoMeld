@@ -112,7 +112,7 @@ Plans:
 
 Plans:
 - [x] 06-01-PLAN.md — LastFM artist.getInfo API + BridgeViewModel metadata/now-playing logic
-- [ ] 06-02-PLAN.md — PathSheet composable + BridgeScreen BottomSheet integration + visual verification
+- [x] 06-02-PLAN.md — PathSheet composable + BridgeScreen BottomSheet integration + visual verification
 
 ### Phase 7: Spotify Integration
 **Goal**: Users with Spotify connected get personalized seed suggestions, a one-tap Random Bridge from their library, and known/unknown badges on bridge artists
