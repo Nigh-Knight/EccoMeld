@@ -93,7 +93,7 @@ Discover music you didn't know you wanted through meaningful, human-like genre b
 - **Bridge algorithm**: WebView + JS bridge for MVP — no native Kotlin port yet
 - **EccoPath bundling**: Git submodule, built assets packaged in APK — works offline
 - **Distribution**: GitHub releases + sideload APK only
-- **Branding**: App name "EccoMeld" but keep existing Meld UI theming/icon for now
+- **Branding**: App name "EccoMeld" with EccoMuse logo (validated Phase 1)
 - **License**: GPL (inherited from Meld/InnerTune)
 - **Package name**: Keep `com.metrolist.music` — renaming deferred
 
@@ -102,8 +102,8 @@ Discover music you didn't know you wanted through meaningful, human-like genre b
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
 | Keep all existing Meld features | Bridge is additive, not a replacement — full music client stays intact | — Pending |
-| WebView for bridge algorithm (MVP) | Ship fast, validate product, port to Kotlin later (~200 lines TS) | — Pending |
-| Bundle EccoPath as git submodule | Offline-capable, no server dependency, reproducible builds | — Pending |
+| WebView for bridge algorithm (MVP) | Ship fast, validate product, port to Kotlin later (~200 lines TS) | Validated Phase 1 |
+| Bundle EccoPath as git submodule | Offline-capable, no server dependency, reproducible builds | Validated Phase 1 |
 | P0 MVP first, P1 in next milestone | Validate bridge concept before building staging/graph/history | — Pending |
 | GitHub releases only | YT Music stream extraction incompatible with Google Play policies | — Pending |
 | Keep com.metrolist.music package | Minimize diff with upstream, rename later if needed | — Pending |
@@ -126,4 +126,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-03 after initialization*
+*Last updated: 2026-04-04 after Phase 1 completion — WebView Foundation*
