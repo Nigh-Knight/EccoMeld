@@ -182,3 +182,8 @@
 ## Listen Together Protobuf classes
 -keep class com.metrolist.music.listentogether.proto.** { *; }
 -keepclassmembers class com.metrolist.music.listentogether.proto.** { *; }
+
+# MeldBridge — EccoPath JS bridge interface (Phase 3)
+-keepclassmembers class com.metrolist.music.bridge.MeldBridgeInterface {
+    @android.webkit.JavascriptInterface public *;
+}
