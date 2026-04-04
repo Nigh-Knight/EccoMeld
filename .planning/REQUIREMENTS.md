@@ -16,7 +16,7 @@ Requirements for MVP (P0) release. Each maps to roadmap phases.
 
 ### Bridge Discovery
 
-- [ ] **BRDG-01**: User can enter a "From" artist and a "To" artist via search inputs with Last.fm autocomplete
+- [x] **BRDG-01**: User can enter a "From" artist and a "To" artist via search inputs with Last.fm autocomplete
 - [x] **BRDG-02**: Bridge computation runs via EccoPath WebView beam search when user taps "Bridge"
 - [x] **BRDG-03**: JS bridge interface (MeldBridge) sends bridge path result from EccoPath to Kotlin
 - [ ] **BRDG-04**: User sees meaningful loading feedback during bridge computation ("Found 3 of 6 hops...")
@@ -94,7 +94,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | BRDG-07 | Phase 2 | Complete |
 | BRDG-02 | Phase 3 | Complete |
 | BRDG-03 | Phase 3 | Complete |
-| BRDG-01 | Phase 4 | Pending |
+| BRDG-01 | Phase 4 | Complete |
 | BRDG-04 | Phase 4 | Pending |
 | BRDG-06 | Phase 4 | Pending |
 | PLAY-01 | Phase 5 | Pending |

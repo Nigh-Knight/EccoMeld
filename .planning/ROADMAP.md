@@ -76,10 +76,10 @@ Plans:
   2. Tapping "Find Bridge" with two artists starts computation and shows step-by-step progress ("Found 3 of 6 hops…")
   3. Bridge UI is disabled while computation is running — a second tap cannot start a concurrent bridge run
   4. When no path exists, user sees a clear error message with a suggestion to try different artists
-**Plans:** 3 plans
+**Plans:** 1/3 plans executed
 
 Plans:
-- [ ] 04-01-PLAN.md — Last.fm artist.search API + response model + test dependencies
+- [x] 04-01-PLAN.md — Last.fm artist.search API + response model + test dependencies
 - [ ] 04-02-PLAN.md — BridgeViewModel autocomplete state + debounce + string resources + unit tests
 - [ ] 04-03-PLAN.md — BridgeScreen UI rewrite (ghost text, progress, error, button states)
 
@@ -129,7 +129,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 1. WebView Foundation | 3/3 | Complete   | 2026-04-04 |
 | 2. Bridge Tab + State Model | 0/1 | Not started | - |
 | 3. JS Bridge | 3/3 | Complete   | 2026-04-04 |
-| 4. Artist Search + Bridge Trigger | 0/3 | Not started | - |
+| 4. Artist Search + Bridge Trigger | 1/3 | In Progress|  |
 | 5. Playlist Builder + Auto-Play | 0/? | Not started | - |
 | 6. Linear Path Result View | 0/? | Not started | - |
 | 7. Spotify Integration | 0/? | Not started | - |
