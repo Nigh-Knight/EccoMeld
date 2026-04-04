@@ -5,20 +5,28 @@
 
 package com.metrolist.music.ui.screens.bridge
 
+import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
@@ -26,9 +34,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -38,12 +48,16 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.invisibleToUser
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -58,6 +72,7 @@ import com.metrolist.music.R
 import com.metrolist.music.ui.component.BottomSheet
 import com.metrolist.music.ui.component.dismissedAnchor
 import com.metrolist.music.ui.component.rememberBottomSheetState
+import com.metrolist.music.ui.component.shimmer.ShimmerHost
 import com.metrolist.music.viewmodels.BridgeViewModel
 
 sealed class BridgeUiState {
@@ -78,6 +93,7 @@ private fun GhostTextField(
     label: String,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    onFocusChanged: ((Boolean) -> Unit)? = null,
 ) {
     // Use shared text style for pixel-perfect ghost alignment (Research Pitfall 1)
     val inputTextStyle = MaterialTheme.typography.bodyLarge.copy(
@@ -158,7 +174,15 @@ private fun GhostTextField(
                         innerTextField()
                     }
                 },
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .then(
+                        if (onFocusChanged != null) {
+                            Modifier.onFocusChanged { onFocusChanged(it.isFocused) }
+                        } else {
+                            Modifier
+                        }
+                    ),
             )
         }
         // Ghost confirmation hint (UI-SPEC: "Tab to confirm" when ghost visible)
@@ -168,6 +192,93 @@ private fun GhostTextField(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
                 modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+    }
+}
+
+/**
+ * Horizontal chip row showing seed artist suggestions (SPOT-01).
+ * Shows shimmer placeholders while loading, hidden via AnimatedVisibility when empty.
+ */
+@Composable
+private fun SeedSuggestionsRow(
+    suggestions: List<String>,
+    isLoading: Boolean,
+    onChipClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    AnimatedVisibility(visible = suggestions.isNotEmpty() || isLoading) {
+        if (isLoading) {
+            val loadingDesc = stringResource(R.string.bridge_seeds_loading_description)
+            ShimmerHost(showGradient = false, modifier = modifier) {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.semantics { contentDescription = loadingDesc },
+                ) {
+                    items(3) {
+                        Box(
+                            modifier = Modifier
+                                .size(width = 80.dp, height = 32.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.surfaceVariant,
+                                    RoundedCornerShape(16.dp),
+                                )
+                                .semantics { invisibleToUser() },
+                        )
+                    }
+                }
+            }
+        } else {
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = modifier,
+            ) {
+                items(suggestions, key = { it }) { artist ->
+                    SuggestionChip(
+                        onClick = { onChipClick(artist) },
+                        label = {
+                            Text(
+                                text = artist,
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Floating Action Button for random bridge discovery (SPOT-02).
+ * Shows CircularProgressIndicator while loading, shuffle icon otherwise.
+ * onClick guard implements disabled-while-running behavior — TalkBack still receives tap events
+ * but no action fires. Standard FAB has no enabled parameter so guard is in onClick lambda.
+ */
+@Composable
+private fun RandomBridgeFab(
+    isLoading: Boolean,
+    isEnabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    FloatingActionButton(
+        onClick = { if (isEnabled) onClick() },
+        modifier = modifier,
+    ) {
+        if (isLoading) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(24.dp),
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                strokeWidth = 2.dp,
+            )
+        } else {
+            Icon(
+                painter = painterResource(R.drawable.shuffle),
+                contentDescription = stringResource(R.string.bridge_random_fab_description),
             )
         }
     }
@@ -188,10 +299,22 @@ fun BridgeScreen(navController: NavController) {
 
     val artistFamiliarity by viewModel.artistFamiliarity.collectAsState()
 
+    // Seed suggestions state (SPOT-01, SPOT-02)
+    val seedSuggestions by viewModel.seedSuggestions.collectAsState()
+    val isLoadingSeeds by viewModel.isLoadingSeeds.collectAsState()
+    val isFabLoading by viewModel.isFabLoading.collectAsState()
+    val randomBridgeToast by viewModel.randomBridgeToast.collectAsState()
+
+    // Focus tracking for D-01 chip fill priority logic
+    var fromHasFocus by remember { mutableStateOf(false) }
+    var toHasFocus by remember { mutableStateOf(false) }
+
     val playerConnection = LocalPlayerConnection.current
     val isBuilding by viewModel.isBuilding.collectAsState()
     val showQueueDialog by viewModel.showQueueDialog.collectAsState()
     val buildFailed by viewModel.buildFailed.collectAsState()
+
+    val context = LocalContext.current
 
     // Observe now-playing artist for highlight tracking (D-05, BRDG-05)
     val mediaMetadata by playerConnection?.mediaMetadata?.collectAsState()
@@ -201,6 +324,17 @@ fun BridgeScreen(navController: NavController) {
         viewModel.onNowPlayingArtistChanged(artistName)
     }
 
+    // Load seed suggestions eagerly on tab entry (idempotent guard inside ViewModel)
+    LaunchedEffect(Unit) { viewModel.loadSeedSuggestions() }
+
+    // Show toast when randomBridge cannot pick (fewer than 2 artists available)
+    LaunchedEffect(randomBridgeToast) {
+        randomBridgeToast?.let {
+            Toast.makeText(context, it, Toast.LENGTH_SHORT).show()
+            viewModel.clearRandomBridgeToast()
+        }
+    }
+
     // Derive current path from uiState (used by both BottomSheet and Show Path button)
     val path = when (val s = uiState) {
         is BridgeUiState.PathFound -> s.path
@@ -208,6 +342,32 @@ fun BridgeScreen(navController: NavController) {
         else -> null
     }
     val nowPlayingIndex = (uiState as? BridgeUiState.PlaylistReady)?.nowPlayingIndex ?: -1
+
+    // Chip fill logic — D-01 priority rules (fills empty or focused input first)
+    val onSeedChipClick: (String) -> Unit = { artistName ->
+        when {
+            fromConfirmed.isBlank() -> {
+                viewModel.onFromQueryChanged(artistName)
+                viewModel.confirmFrom()
+            }
+            toConfirmed.isBlank() -> {
+                viewModel.onToQueryChanged(artistName)
+                viewModel.confirmTo()
+            }
+            fromHasFocus -> {
+                viewModel.onFromQueryChanged(artistName)
+                viewModel.confirmFrom()
+            }
+            toHasFocus -> {
+                viewModel.onToQueryChanged(artistName)
+                viewModel.confirmTo()
+            }
+            else -> {  // both filled, neither focused — fallback to From
+                viewModel.onFromQueryChanged(artistName)
+                viewModel.confirmFrom()
+            }
+        }
+    }
 
     // Queue confirmation dialog — shown when playlist is ready (D-06)
     if (showQueueDialog && playerConnection != null) {
@@ -275,6 +435,7 @@ fun BridgeScreen(navController: NavController) {
                     placeholder = stringResource(R.string.bridge_from_placeholder),
                     label = stringResource(R.string.bridge_from_label),
                     enabled = !isSearching,
+                    onFocusChanged = { fromHasFocus = it },
                     modifier = Modifier.weight(1f),
                 )
                 GhostTextField(
@@ -285,9 +446,20 @@ fun BridgeScreen(navController: NavController) {
                     placeholder = stringResource(R.string.bridge_to_placeholder),
                     label = stringResource(R.string.bridge_to_label),
                     enabled = !isSearching,
+                    onFocusChanged = { toHasFocus = it },
                     modifier = Modifier.weight(1f),
                 )
             }
+
+            Spacer(Modifier.height(8.dp))
+
+            // Seed suggestion chips row (SPOT-01) — between inputs and Find Bridge button
+            SeedSuggestionsRow(
+                suggestions = seedSuggestions,
+                isLoading = isLoadingSeeds,
+                onChipClick = onSeedChipClick,
+                modifier = Modifier.fillMaxWidth(),
+            )
 
             Spacer(Modifier.height(8.dp))
 
@@ -479,5 +651,22 @@ fun BridgeScreen(navController: NavController) {
                 )
             }
         }
+
+        // Random Bridge FAB — last child in BoxWithConstraints so it sits above all content
+        // in Z-order, including the bottom sheet (SPOT-02, Research Pattern 4)
+        RandomBridgeFab(
+            isLoading = isFabLoading,
+            isEnabled = !viewModel.isRunning && !isFabLoading,
+            onClick = {
+                viewModel.randomBridge(context.getString(R.string.bridge_random_no_artists))
+            },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .windowInsetsPadding(
+                    LocalPlayerAwareWindowInsets.current
+                        .only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal)
+                )
+                .padding(16.dp),
+        )
     }
 }
