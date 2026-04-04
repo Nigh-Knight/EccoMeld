@@ -31,7 +31,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. IndexedDB cache written during one session is readable in a fresh app restart (Last.fm cache survives)
   3. The app name displays as "EccoMeld" in the launcher and app bar
   4. WebView is served from `https://appassets.androidplatform.net/` — never `file://`
-**Plans**: TBD
+**Plans:** 3 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — EccoPath submodule + Gradle build pipeline (static export to APK assets)
+- [ ] 01-02-PLAN.md — Rebrand text and icon to EccoMeld
+- [ ] 01-03-PLAN.md — Hilt singleton WebView with WebViewAssetLoader (HTTPS origin + IndexedDB)
 
 ### Phase 2: Bridge Tab + State Model
 **Goal**: A Bridge tab exists in bottom navigation and the full BridgeUiState sealed class is defined with all transitions stubbed out
@@ -110,7 +115,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. WebView Foundation | 0/? | Not started | - |
+| 1. WebView Foundation | 0/3 | Planning complete | - |
 | 2. Bridge Tab + State Model | 0/? | Not started | - |
 | 3. JS Bridge | 0/? | Not started | - |
 | 4. Artist Search + Bridge Trigger | 0/? | Not started | - |
