@@ -247,6 +247,7 @@ dependencies {
     implementation(libs.browser)
     implementation(libs.hilt.navigation)
     implementation(libs.datastore)
+    implementation(libs.webkit)
 
     implementation(libs.compose.runtime)
     implementation(libs.compose.foundation)
