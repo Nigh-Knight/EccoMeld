@@ -93,10 +93,10 @@ Plans:
   3. Tracks are matched to playable YT Music video IDs via fuzzy artist+title matching
   4. Tracks that fail YT Music matching are silently skipped — the playlist continues without error dialogs
   5. Bridge playlist plays through the existing Meld player bar (mini and expanded) with full controls
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
-- [ ] 05-01-PLAN.md — Last.fm getArtistTopTracks API + BridgePlaylistBuilder (track resolution pipeline)
+- [x] 05-01-PLAN.md — Last.fm getArtistTopTracks API + BridgePlaylistBuilder (track resolution pipeline)
 - [ ] 05-02-PLAN.md — BridgeViewModel wiring + queue dialog + auto-play integration
 
 ### Phase 6: Linear Path Result View
@@ -134,6 +134,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 2. Bridge Tab + State Model | 0/1 | Not started | - |
 | 3. JS Bridge | 3/3 | Complete   | 2026-04-04 |
 | 4. Artist Search + Bridge Trigger | 3/3 | Complete   | 2026-04-04 |
-| 5. Playlist Builder + Auto-Play | 0/2 | Not started | - |
+| 5. Playlist Builder + Auto-Play | 1/2 | In Progress|  |
 | 6. Linear Path Result View | 0/? | Not started | - |
 | 7. Spotify Integration | 0/? | Not started | - |
