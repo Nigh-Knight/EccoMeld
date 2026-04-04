@@ -975,4 +975,7 @@
     <string name="bridge_queue_replace">Replace queue</string>
     <string name="bridge_queue_play_next">Play next</string>
     <string name="bridge_no_tracks_found">Couldn\'t find playable tracks for this bridge</string>
+    <string name="bridge_path_sheet_title">Bridge Path</string>
+    <string name="bridge_path_show_button">Show Path</string>
+    <string name="bridge_path_listener_count">%1$s</string>
 </resources>

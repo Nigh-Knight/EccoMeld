@@ -8,6 +8,7 @@ package com.metrolist.music.ui.screens.bridge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -32,8 +33,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -51,6 +55,9 @@ import androidx.navigation.NavController
 import com.metrolist.music.LocalPlayerAwareWindowInsets
 import com.metrolist.music.LocalPlayerConnection
 import com.metrolist.music.R
+import com.metrolist.music.ui.component.BottomSheet
+import com.metrolist.music.ui.component.dismissedAnchor
+import com.metrolist.music.ui.component.rememberBottomSheetState
 import com.metrolist.music.viewmodels.BridgeViewModel
 
 sealed class BridgeUiState {
@@ -177,11 +184,28 @@ fun BridgeScreen(navController: NavController) {
     val fromConfirmed by viewModel.fromConfirmedArtist.collectAsState()
     val toConfirmed by viewModel.toConfirmedArtist.collectAsState()
     val isSearching = uiState is BridgeUiState.Searching
+    val artistMetadata by viewModel.artistMetadata.collectAsState()
 
     val playerConnection = LocalPlayerConnection.current
     val isBuilding by viewModel.isBuilding.collectAsState()
     val showQueueDialog by viewModel.showQueueDialog.collectAsState()
     val buildFailed by viewModel.buildFailed.collectAsState()
+
+    // Observe now-playing artist for highlight tracking (D-05, BRDG-05)
+    val mediaMetadata by playerConnection?.mediaMetadata?.collectAsState()
+        ?: remember { mutableStateOf(null) }
+    LaunchedEffect(mediaMetadata) {
+        val artistName = mediaMetadata?.artists?.firstOrNull()?.name ?: ""
+        viewModel.onNowPlayingArtistChanged(artistName)
+    }
+
+    // Derive current path from uiState (used by both BottomSheet and Show Path button)
+    val path = when (val s = uiState) {
+        is BridgeUiState.PathFound -> s.path
+        is BridgeUiState.PlaylistReady -> s.path
+        else -> null
+    }
+    val nowPlayingIndex = (uiState as? BridgeUiState.PlaylistReady)?.nowPlayingIndex ?: -1
 
     // Queue confirmation dialog — shown when playlist is ready (D-06)
     if (showQueueDialog && playerConnection != null) {
@@ -209,188 +233,247 @@ fun BridgeScreen(navController: NavController) {
         )
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(LocalPlayerAwareWindowInsets.current.asPaddingValues()),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Spacer(Modifier.height(48.dp))
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val pathSheetState = rememberBottomSheetState(
+            dismissedBound = 0.dp,
+            expandedBound = maxHeight,
+            collapsedBound = 220.dp,
+            initialAnchor = dismissedAnchor,
+        )
 
-        // Input section — two side-by-side fields (D-03)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            GhostTextField(
-                value = fromQuery,
-                ghostSuffix = fromGhostSuffix,
-                onValueChange = { viewModel.onFromQueryChanged(it) },
-                onConfirm = { viewModel.confirmFrom() },
-                placeholder = stringResource(R.string.bridge_from_placeholder),
-                label = stringResource(R.string.bridge_from_label),
-                enabled = !isSearching,
-                modifier = Modifier.weight(1f),
-            )
-            GhostTextField(
-                value = toQuery,
-                ghostSuffix = toGhostSuffix,
-                onValueChange = { viewModel.onToQueryChanged(it) },
-                onConfirm = { viewModel.confirmTo() },
-                placeholder = stringResource(R.string.bridge_to_placeholder),
-                label = stringResource(R.string.bridge_to_label),
-                enabled = !isSearching,
-                modifier = Modifier.weight(1f),
-            )
+        // Auto-show/hide sheet on uiState transitions (D-02)
+        LaunchedEffect(uiState) {
+            when (uiState) {
+                is BridgeUiState.PathFound, is BridgeUiState.PlaylistReady -> pathSheetState.collapseSoft()
+                is BridgeUiState.Idle, is BridgeUiState.Searching -> pathSheetState.dismiss()
+                else -> Unit  // Error state: leave sheet as-is
+            }
         }
 
-        Spacer(Modifier.height(8.dp))
-
-        // Find Bridge button (D-09: disabled when running or inputs empty)
-        Button(
-            onClick = { viewModel.findBridge() },
-            enabled = fromConfirmed.isNotBlank() && toConfirmed.isNotBlank() && !isSearching,
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .height(48.dp),
+                .fillMaxSize()
+                .padding(LocalPlayerAwareWindowInsets.current.asPaddingValues()),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            if (isSearching) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+            Spacer(Modifier.height(48.dp))
+
+            // Input section — two side-by-side fields (D-03)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                GhostTextField(
+                    value = fromQuery,
+                    ghostSuffix = fromGhostSuffix,
+                    onValueChange = { viewModel.onFromQueryChanged(it) },
+                    onConfirm = { viewModel.confirmFrom() },
+                    placeholder = stringResource(R.string.bridge_from_placeholder),
+                    label = stringResource(R.string.bridge_from_label),
+                    enabled = !isSearching,
+                    modifier = Modifier.weight(1f),
                 )
-                Spacer(Modifier.width(8.dp))
-            }
-            Text(stringResource(R.string.bridge_find_button))
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        // State-driven content section
-        when (val state = uiState) {
-            is BridgeUiState.Idle -> {
-                Text(
-                    text = stringResource(R.string.bridge_idle_hint),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 24.dp),
+                GhostTextField(
+                    value = toQuery,
+                    ghostSuffix = toGhostSuffix,
+                    onValueChange = { viewModel.onToQueryChanged(it) },
+                    onConfirm = { viewModel.confirmTo() },
+                    placeholder = stringResource(R.string.bridge_to_placeholder),
+                    label = stringResource(R.string.bridge_to_label),
+                    enabled = !isSearching,
+                    modifier = Modifier.weight(1f),
                 )
             }
-            is BridgeUiState.Searching -> {
-                // Progress bar — determinate when hops known, indeterminate otherwise (D-06, D-07)
-                val progress = if (state.totalHops > 0)
-                    state.foundHops.toFloat() / state.totalHops.toFloat()
-                else
-                    null
 
-                if (progress != null) {
-                    LinearProgressIndicator(
-                        progress = { progress },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 24.dp),
+            Spacer(Modifier.height(8.dp))
+
+            // Find Bridge button (D-09: disabled when running or inputs empty)
+            Button(
+                onClick = { viewModel.findBridge() },
+                enabled = fromConfirmed.isNotBlank() && toConfirmed.isNotBlank() && !isSearching,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .height(48.dp),
+            ) {
+                if (isSearching) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
                     )
-                } else {
-                    LinearProgressIndicator(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 24.dp),
-                    )
+                    Spacer(Modifier.width(8.dp))
                 }
-                Spacer(Modifier.height(8.dp))
-                // Progress message text
-                Text(
-                    text = stringResource(R.string.bridge_searching_hint),
-                    style = MaterialTheme.typography.bodyLarge,
-                    textAlign = TextAlign.Center,
-                )
-                // Hop count (only when totalHops known)
-                if (state.totalHops > 0) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = stringResource(
-                            R.string.bridge_progress_hops,
-                            state.foundHops,
-                            state.totalHops
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        textAlign = TextAlign.Center,
-                    )
-                }
+                Text(stringResource(R.string.bridge_find_button))
             }
-            is BridgeUiState.PathFound -> {
-                if (isBuilding) {
-                    // Show building progress while tracks are being resolved
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.padding(horizontal = 24.dp),
-                    ) {
-                        CircularProgressIndicator(modifier = Modifier.size(32.dp))
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = stringResource(R.string.bridge_building_playlist),
-                            style = MaterialTheme.typography.bodyLarge,
-                            textAlign = TextAlign.Center,
-                        )
-                    }
-                } else if (buildFailed) {
-                    // All tracks failed to resolve — show informative message
+
+            Spacer(Modifier.height(16.dp))
+
+            // State-driven content section
+            when (val state = uiState) {
+                is BridgeUiState.Idle -> {
                     Text(
-                        text = stringResource(R.string.bridge_no_tracks_found),
-                        style = MaterialTheme.typography.bodyMedium,
+                        text = stringResource(R.string.bridge_idle_hint),
+                        style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(horizontal = 24.dp),
                     )
-                } else {
+                }
+                is BridgeUiState.Searching -> {
+                    // Progress bar — determinate when hops known, indeterminate otherwise (D-06, D-07)
+                    val progress = if (state.totalHops > 0)
+                        state.foundHops.toFloat() / state.totalHops.toFloat()
+                    else
+                        null
+
+                    if (progress != null) {
+                        LinearProgressIndicator(
+                            progress = { progress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp),
+                        )
+                    } else {
+                        LinearProgressIndicator(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp),
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    // Progress message text
                     Text(
-                        text = stringResource(R.string.bridge_path_found_hint),
+                        text = stringResource(R.string.bridge_searching_hint),
+                        style = MaterialTheme.typography.bodyLarge,
+                        textAlign = TextAlign.Center,
+                    )
+                    // Hop count (only when totalHops known)
+                    if (state.totalHops > 0) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(
+                                R.string.bridge_progress_hops,
+                                state.foundHops,
+                                state.totalHops
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+                is BridgeUiState.PathFound -> {
+                    if (isBuilding) {
+                        // Show building progress while tracks are being resolved
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(horizontal = 24.dp),
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(32.dp))
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                text = stringResource(R.string.bridge_building_playlist),
+                                style = MaterialTheme.typography.bodyLarge,
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                    } else if (buildFailed) {
+                        // All tracks failed to resolve — show informative message
+                        Text(
+                            text = stringResource(R.string.bridge_no_tracks_found),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 24.dp),
+                        )
+                    } else {
+                        Text(
+                            text = stringResource(R.string.bridge_path_found_hint),
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
+                is BridgeUiState.PlaylistReady -> {
+                    Text(
+                        text = stringResource(R.string.bridge_playlist_ready_hint),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
+                is BridgeUiState.Error -> {
+                    // Inline error display (D-08) — no dialog
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .padding(horizontal = 24.dp)
+                            .semantics { liveRegion = LiveRegionMode.Polite },
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.error),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = state.message,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = stringResource(R.string.bridge_error_suggestion),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
             }
-            is BridgeUiState.PlaylistReady -> {
-                // Placeholder for Phase 5 playlist view
-                Text(
-                    text = stringResource(R.string.bridge_playlist_ready_hint),
-                    style = MaterialTheme.typography.bodyMedium,
+
+            // Show Path button — visible when a path exists but the sheet is dismissed
+            if (path != null && pathSheetState.isDismissed) {
+                Spacer(Modifier.height(16.dp))
+                TextButton(onClick = { pathSheetState.collapseSoft() }) {
+                    Text(stringResource(R.string.bridge_path_show_button))
+                }
+            }
+        }
+
+        // Path bottom sheet overlay — only rendered when a path exists
+        if (path != null) {
+            BottomSheet(
+                state = pathSheetState,
+                onDismiss = { /* allow dismiss — re-openable via Show Path button */ },
+                collapsedContent = {
+                    // Collapsed peek: drag handle centered at top
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(pathSheetState.collapsedBound)
+                            .padding(16.dp),
+                        contentAlignment = Alignment.TopCenter,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(32.dp)
+                                .height(4.dp)
+                                .background(
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                    RoundedCornerShape(2.dp),
+                                ),
+                        )
+                    }
+                },
+            ) {
+                PathSheet(
+                    path = path,
+                    artistMetadata = artistMetadata,
+                    nowPlayingIndex = nowPlayingIndex,
                 )
-            }
-            is BridgeUiState.Error -> {
-                // Inline error display (D-08) — no dialog
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        .padding(horizontal = 24.dp)
-                        .semantics { liveRegion = LiveRegionMode.Polite },
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.error),
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = state.message,
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = TextAlign.Center,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = stringResource(R.string.bridge_error_suggestion),
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                        style = MaterialTheme.typography.bodyMedium,
-                        textAlign = TextAlign.Center,
-                    )
-                }
             }
         }
     }
