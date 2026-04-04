@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-js-bridge 03-00-PLAN.md
-last_updated: "2026-04-04T09:00:49.191Z"
+stopped_at: Completed 03-js-bridge/03-01-PLAN.md
+last_updated: "2026-04-04T09:01:55.615Z"
 last_activity: 2026-04-04
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 7
-  completed_plans: 5
+  completed_plans: 6
   percent: 100
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-04-04)
 ## Current Position
 
 Phase: 03 (js-bridge) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-04-04
 
@@ -57,6 +57,7 @@ Progress: [████████████████████] 4/4 pla
 | Phase 01-webview-foundation P03 | 2min | 3 tasks | 5 files |
 | Phase 02-bridge-tab-state-model P01 | 5min | 2 tasks | 8 files |
 | Phase 03-js-bridge P00 | 1min | 2 tasks | 3 files |
+| Phase 03-js-bridge P01 | 3min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -80,6 +81,8 @@ Recent decisions affecting current work:
 - [Phase 02-bridge-tab-state-model]: Compass/explore icon reused for bridge nav icons — semantically represents discovery
 - [Phase 02-bridge-tab-state-model]: Bridge tab appended last in MainScreens list — least disruptive to existing tab order
 - [Phase 03-js-bridge]: @Ignore chosen over failing assertions for Wave 0 stubs — stubs compile clean and report as skipped not failures
+- [Phase 03-js-bridge]: MeldBridgeInterface uses mutable var callbacks (not constructor params) — Hilt constructs singleton before BridgeViewModel exists
+- [Phase 03-js-bridge]: window.__eccoFindBridge assigned in useEffect after React hydration, onBridgeReady() called as deterministic readiness signal (no polling)
 
 ### Pending Todos
 
@@ -94,6 +97,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-04T09:00:49.188Z
-Stopped at: Completed 03-js-bridge 03-00-PLAN.md
+Last session: 2026-04-04T09:01:55.611Z
+Stopped at: Completed 03-js-bridge/03-01-PLAN.md
 Resume file: None
