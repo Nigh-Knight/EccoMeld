@@ -12,7 +12,7 @@ Requirements for MVP (P0) release. Each maps to roadmap phases.
 - [ ] **INFRA-01**: EccoPath bundled as git submodule with static export packaged as APK assets
 - [ ] **INFRA-02**: WebView loads bundled EccoPath via WebViewAssetLoader (HTTPS origin, not file://)
 - [ ] **INFRA-03**: IndexedDB cache persists across WebView sessions (Last.fm cache survives app restart)
-- [ ] **INFRA-04**: App name displayed as "EccoMeld" (launcher label, app bar)
+- [x] **INFRA-04**: App name displayed as "EccoMeld" (launcher label, app bar)
 
 ### Bridge Discovery
 
@@ -90,7 +90,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INFRA-01 | Phase 1 | Pending |
 | INFRA-02 | Phase 1 | Pending |
 | INFRA-03 | Phase 1 | Pending |
-| INFRA-04 | Phase 1 | Pending |
+| INFRA-04 | Phase 1 | Complete |
 | BRDG-07 | Phase 2 | Pending |
 | BRDG-02 | Phase 3 | Pending |
 | BRDG-03 | Phase 3 | Pending |
