@@ -49,7 +49,7 @@ Plans:
 **Plans:** 1 plan
 
 Plans:
-- [ ] 02-01-PLAN.md — Bridge tab navigation wiring + BridgeUiState sealed class + BridgeScreen placeholder
+- [x] 02-01-PLAN.md — Bridge tab navigation wiring + BridgeUiState sealed class + BridgeScreen placeholder
 
 ### Phase 3: JS Bridge
 **Goal**: MeldBridgeInterface is registered and the round-trip from Kotlin → EccoPath JS → Kotlin callback works end-to-end with verified thread safety

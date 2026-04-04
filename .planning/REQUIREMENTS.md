@@ -22,7 +22,7 @@ Requirements for MVP (P0) release. Each maps to roadmap phases.
 - [ ] **BRDG-04**: User sees meaningful loading feedback during bridge computation ("Found 3 of 6 hops...")
 - [ ] **BRDG-05**: User sees a linear path result view — seed at top, target at bottom, bridge artists between with genre tags and listener counts
 - [ ] **BRDG-06**: User sees a clear error message when no path is found, with suggestion to try different artists
-- [ ] **BRDG-07**: Bridge tab appears in bottom navigation alongside existing Meld tabs
+- [x] **BRDG-07**: Bridge tab appears in bottom navigation alongside existing Meld tabs
 
 ### Playback Integration
 
@@ -91,7 +91,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INFRA-02 | Phase 1 | Complete |
 | INFRA-03 | Phase 1 | Complete |
 | INFRA-04 | Phase 1 | Complete |
-| BRDG-07 | Phase 2 | Pending |
+| BRDG-07 | Phase 2 | Complete |
 | BRDG-02 | Phase 3 | Pending |
 | BRDG-03 | Phase 3 | Pending |
 | BRDG-01 | Phase 4 | Pending |
