@@ -1,5 +1,5 @@
 <div align="center">
-<img src="app/src/main/res/mipmap-xhdpi/ic_launcher_foreground.png" width="120" height="120"/>
+<img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png" width="200" height="200"/>
 <h1>EccoMeld</h1>
 <p><em>Bridge Discovery for Meld</em></p>
 
