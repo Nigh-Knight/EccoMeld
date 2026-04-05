@@ -401,13 +401,11 @@ fun BridgeScreen(navController: NavController) {
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        // Reserve space for the top app bar + status bar so the sheet doesn't slide under it
-        val topInset = LocalPlayerAwareWindowInsets.current
-            .asPaddingValues().calculateTopPadding() + 64.dp
+        // Fixed bounds so sheet doesn't jump when keyboard appears/disappears
         val pathSheetState = rememberBottomSheetState(
             dismissedBound = 0.dp,
-            expandedBound = maxHeight - topInset,
-            collapsedBound = 148.dp,
+            expandedBound = 350.dp,
+            collapsedBound = 64.dp,
             initialAnchor = dismissedAnchor,
         )
 
@@ -637,8 +635,8 @@ fun BridgeScreen(navController: NavController) {
                 state = pathSheetState,
                 onDismiss = { /* allow dismiss — re-openable via Show Path button */ },
                 collapsedContent = {
-                    // Collapsed peek: drag handle + surface background
-                    Box(
+                    // Collapsed peek: drag handle + path summary
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(pathSheetState.collapsedBound)
@@ -646,8 +644,8 @@ fun BridgeScreen(navController: NavController) {
                                 MaterialTheme.colorScheme.surfaceContainer,
                                 RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
                             )
-                            .padding(16.dp),
-                        contentAlignment = Alignment.TopCenter,
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
                         Box(
                             modifier = Modifier
@@ -657,6 +655,14 @@ fun BridgeScreen(navController: NavController) {
                                     MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                                     RoundedCornerShape(2.dp),
                                 ),
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = path?.joinToString(" → ") ?: "",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 2,
+                            textAlign = TextAlign.Center,
                         )
                     }
                 },
