@@ -1,65 +1,60 @@
-# Requirements: EccoMeld
+# Requirements: EccoMeld v2.0
 
-**Defined:** 2026-04-03
+**Defined:** 2026-04-05
 **Core Value:** Discover music through meaningful, human-like genre bridges between any two artists
 
-## v1 Requirements
+## v2.0 Requirements
 
-Requirements for MVP (P0) release. Each maps to roadmap phases.
+Requirements for Path Walker & Discovery milestone. Each maps to roadmap phases.
 
-### Infrastructure
+### Path Walker Core
 
-- [x] **INFRA-01**: EccoPath bundled as git submodule with static export packaged as APK assets
-- [x] **INFRA-02**: WebView loads bundled EccoPath via WebViewAssetLoader (HTTPS origin, not file://)
-- [x] **INFRA-03**: IndexedDB cache persists across WebView sessions (Last.fm cache survives app restart)
-- [x] **INFRA-04**: App name displayed as "EccoMeld" (launcher label, app bar)
+- [ ] **WALK-01**: Path Walker is a dedicated screen with its own bottom nav tab ("Walk")
+- [ ] **WALK-02**: Artist search input at the top — type an artist name to seed the graph
+- [ ] **WALK-03**: Hyperbolic graph renders as a Poincare disk with seed artist at center and 5 FALA frontier nodes fanning outward
+- [ ] **WALK-04**: User can tap a frontier node to expand it — fetches 5 new FALA artists, extends the graph, and appends 1-2 top tracks from the expanded artist to the playback queue
+- [ ] **WALK-05**: Nodes display 7 distinct visual states (seed, frontier, loading, current, active, explored, error) with animated transitions
+- [ ] **WALK-06**: User can pan and pinch-to-zoom the graph with touch gestures
+- [ ] **WALK-07**: Active path highlighted on the graph; explored-but-abandoned branches stay visible as dimmed nodes
+- [ ] **WALK-08**: User can tap any explored node to re-enter the walk from that point (branching)
 
-### Bridge Discovery
+### Walk Entry Points
 
-- [x] **BRDG-01**: User can enter a "From" artist and a "To" artist via search inputs with Last.fm autocomplete
-- [x] **BRDG-02**: Bridge computation runs via EccoPath WebView beam search when user taps "Bridge"
-- [x] **BRDG-03**: JS bridge interface (MeldBridge) sends bridge path result from EccoPath to Kotlin
-- [x] **BRDG-04**: User sees meaningful loading feedback during bridge computation ("Found 3 of 6 hops...")
-- [x] **BRDG-05**: User sees a linear path result view — seed at top, target at bottom, bridge artists between with genre tags and listener counts
-- [x] **BRDG-06**: User sees a clear error message when no path is found, with suggestion to try different artists
-- [x] **BRDG-07**: Bridge tab appears in bottom navigation alongside existing Meld tabs
+- [ ] **ENTRY-01**: "Path Walk" option in song three-dot context menu across the entire app — opens Walk tab pre-seeded with that song's artist
+- [ ] **ENTRY-02**: "Path Walk from here" on artist pages — opens Walk tab pre-seeded
+- [ ] **ENTRY-03**: Walk tab can be opened directly from bottom nav with empty state and search input
 
-### Playback Integration
+### Walk Detail
 
-- [x] **PLAY-01**: Unified playlist auto-plays immediately when bridge is found — no manual "play" action needed
-- [x] **PLAY-02**: Track selection per bridge artist: 2 popular tracks + 3-5 deep cuts, genre-transition order preserved
-- [x] **PLAY-03**: YT Music fuzzy matching resolves each bridge artist's tracks to playable YT Music video IDs
-- [x] **PLAY-04**: YT Music match failures skip silently — unavailable tracks don't break playlist flow
-- [x] **PLAY-05**: Bridge playlist feeds into existing Meld queue and plays via existing player bar
-- [x] **PLAY-06**: Path result view persists and remains accessible while bridge playlist plays
-- [x] **PLAY-07**: Currently-playing bridge artist is highlighted in the path result view
+- [ ] **DETAIL-01**: Artist detail bottom sheet shows artist image, genre tags, listener count, and match score when tapping an explored/active node
 
-### Spotify Integration
+### History
 
-- [x] **SPOT-01**: User's Spotify liked artists appear as quick-pick seed suggestions below From/To inputs
-- [x] **SPOT-02**: Random Bridge button picks two genre-opposite artists from Spotify liked songs via Tag Jaccard distance
-- [x] **SPOT-03**: Bridge artists in path view show "known" or "NEW" badge based on user's Spotify listening history
+- [ ] **HIST-01**: Completed bridge searches are persisted to Room DB and can be replayed from a history screen
+- [ ] **HIST-02**: Path Walker sessions are persisted with full graph state and track list for replay
+- [ ] **HIST-03**: History screen lists past bridges and walks with date, artists, and hop count
 
-## v2 Requirements
+### Bridge Improvements
 
-Deferred to next milestone (P1). Tracked but not in current roadmap.
+- [ ] **BRDG-08**: Track resolution improvements reduce "no tracks found" rate for bridge and walk artists
 
-### Path Walker
+## Future Requirements
 
-- **WALK-01**: User sees 4-5 staging artist cards with photo, name, and genre tags
-- **WALK-02**: Tapping a staging artist plays their tracks and shows new staging options toward destination
-- **WALK-03**: User can set multiple destinations that chain sequentially
+Deferred to later milestones.
 
-### Graph Queue
+### Sonic Track Sequencing (v3.0)
 
-- **GRPH-01**: Graph visualization shows the user's journey with now-playing highlighted
-- **GRPH-02**: Staging includes both target-directed bridges and seed-adjacent detours
+- **SONIC-01**: GetSongBPM / TheAudioDB / Gemini Flash integration for track metadata (BPM, key, energy, mood)
+- **SONIC-02**: Sonic-aware track selection — pick tracks that transition smoothly between adjacent bridge artists
+- **SONIC-03**: Crossfade optimization — use BPM matching to set crossfade timing
+- **SONIC-04**: Deep cut priority — prefer obscure tracks that sonically bridge genres over popular hits
+- **SONIC-05**: Boil the Frog mode — entire playlist is one continuous sonic gradient
 
 ### Extended Features
 
-- **EXTD-01**: Bridge Radio — expanded playlist with 2-3 similar artists per midpoint
-- **EXTD-02**: Bridge History — saved bridge paths with "play again" and "discover new route"
-- **EXTD-03**: Unknown artist priority scoring in all staging/bridge results
+- **EXTD-01**: Bridge Radio — expanded playlist with similar artists beyond the target
+- **EXTD-02**: Unknown artist priority scoring in walk/bridge results
+- **EXTD-03**: Configurable tracks-per-node (1 / 3 / 5) for walk pace control
 
 ## Out of Scope
 
@@ -67,19 +62,13 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Feature | Reason |
 |---------|--------|
-| Graph visualization (force-directed) | High complexity, deferred to P1 Graph Screen |
-| Social sharing of bridge paths | No backend, personal use app |
-| Editable playlist / track removal before play | Breaks curated journey philosophy; existing skip controls suffice |
-| Manual path editing / artist swap | High complexity; re-run bridge instead |
-| Configurable hop count slider | Increases confusion; algorithm auto-selects good path length |
-| AI-generated bridge narration | API cost + latency; genre tags + listener counts are sufficient |
-| Track preview before committing | Undermines "just go" exploration philosophy |
-| Daily Bridge notifications | P2, deferred |
-| Taste drift analytics | P2, deferred |
-| Walk & Listen mode | P2, deferred |
-| Native Kotlin port of bridge algorithm | Post-MVP; WebView-first validates product |
-| Google Play distribution | YT Music stream extraction incompatible with Play policies |
-| Package rename (com.metrolist.music) | Minimize diff with upstream; rename later |
+| Walk & Listen (auto-pilot mode) | Too similar to existing Spotify/YT Music radio |
+| Social sharing of bridges/walks | No backend, personal use only |
+| Graph force-directed layout | Hyperbolic layout is superior for tree exploration |
+| Walk breadcrumb trail | Graph itself serves as the trail — breadcrumb is redundant for branching paths |
+| MiniGraph thumbnail | Pinch-to-zoom on the graph serves the same purpose |
+| Daily Bridge notifications | Deferred |
+| Taste drift analytics | Deferred |
 
 ## Traceability
 
@@ -87,33 +76,27 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INFRA-01 | Phase 1 | Complete |
-| INFRA-02 | Phase 1 | Complete |
-| INFRA-03 | Phase 1 | Complete |
-| INFRA-04 | Phase 1 | Complete |
-| BRDG-07 | Phase 2 | Complete |
-| BRDG-02 | Phase 3 | Complete |
-| BRDG-03 | Phase 3 | Complete |
-| BRDG-01 | Phase 4 | Complete |
-| BRDG-04 | Phase 4 | Complete |
-| BRDG-06 | Phase 4 | Complete |
-| PLAY-01 | Phase 5 | Complete |
-| PLAY-02 | Phase 5 | Complete |
-| PLAY-03 | Phase 5 | Complete |
-| PLAY-04 | Phase 5 | Complete |
-| PLAY-05 | Phase 5 | Complete |
-| BRDG-05 | Phase 6 | Complete |
-| PLAY-06 | Phase 6 | Complete |
-| PLAY-07 | Phase 6 | Complete |
-| SPOT-01 | Phase 7 | Complete |
-| SPOT-02 | Phase 7 | Complete |
-| SPOT-03 | Phase 7 | Complete |
+| WALK-01 | — | Pending |
+| WALK-02 | — | Pending |
+| WALK-03 | — | Pending |
+| WALK-04 | — | Pending |
+| WALK-05 | — | Pending |
+| WALK-06 | — | Pending |
+| WALK-07 | — | Pending |
+| WALK-08 | — | Pending |
+| ENTRY-01 | — | Pending |
+| ENTRY-02 | — | Pending |
+| ENTRY-03 | — | Pending |
+| DETAIL-01 | — | Pending |
+| HIST-01 | — | Pending |
+| HIST-02 | — | Pending |
+| HIST-03 | — | Pending |
+| BRDG-08 | — | Pending |
 
 **Coverage:**
-- v1 requirements: 21 total
-- Mapped to phases: 21
-- Unmapped: 0 ✓
+- v2.0 requirements: 16 total
+- Mapped to phases: 0
+- Unmapped: 16
 
 ---
-*Requirements defined: 2026-04-03*
-*Last updated: 2026-04-03 after roadmap creation*
+*Requirements defined: 2026-04-05*
