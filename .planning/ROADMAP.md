@@ -134,14 +134,50 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. WebView Foundation | 3/3 | Complete   | 2026-04-04 |
-| 2. Bridge Tab + State Model | 0/1 | Not started | - |
-| 3. JS Bridge | 3/3 | Complete   | 2026-04-04 |
-| 4. Artist Search + Bridge Trigger | 3/3 | Complete   | 2026-04-04 |
-| 5. Playlist Builder + Auto-Play | 2/2 | Complete   |  |
-| 6. Linear Path Result View | 0/2 | Not started | - |
-| 7. Spotify Integration | 2/3 | In Progress|  |
+| 1. WebView Foundation | 3/3 | Complete | 2026-04-04 |
+| 2. Bridge Tab + State Model | 1/1 | Complete | 2026-04-04 |
+| 3. JS Bridge | 3/3 | Complete | 2026-04-04 |
+| 4. Artist Search + Bridge Trigger | 3/3 | Complete | 2026-04-04 |
+| 5. Playlist Builder + Auto-Play | 2/2 | Complete | 2026-04-04 |
+| 6. Linear Path Result View | 2/2 | Complete | 2026-04-04 |
+| 7. Spotify Integration | 3/3 | Complete | 2026-04-04 |
+| 8. Native Kotlin Bridge Algorithm | 0/3 | Not started | - |
+| 9. Bridge UI Redesign | 0/? | Not started | - |
+
+### Phase 8: Native Kotlin Bridge Algorithm
+
+**Goal:** Port the bridge beam search algorithm from TypeScript/WebView to native Kotlin coroutines with Room DB caching, eliminating the WebView dependency and cold cache performance problem
+**Depends on:** Phase 4 (Last.fm API client)
+**Requirements**: INFRA-01, BRDG-02, BRDG-03
+**Success Criteria** (what must be TRUE):
+  1. Bidirectional beam search runs as a Kotlin coroutine without any WebView involvement
+  2. Last.fm similar-artist and tag data is cached in Room DB, persisting across app restarts
+  3. Bridge search completes for a known artist pair (e.g., Radiohead → Kendrick Lamar) and returns a valid 5-7 hop path
+  4. Rate limiting prevents Last.fm API throttling (<=5 req/sec)
+  5. BridgeViewModel calls the Kotlin bridge directly — no evaluateJavascript
+**Plans:** 3 plans
+
+Plans:
+- [ ] 08-01-PLAN.md — LastFM getSimilarArtists API + Room entities + cache + rate limiter
+- [ ] 08-02-PLAN.md — BridgeAlgorithm (Kotlin port of bidirectional beam search)
+- [ ] 08-03-PLAN.md — BridgeViewModel rewiring + Hilt DI + updated tests
+
+### Phase 9: Bridge UI Redesign
+
+**Goal:** Replace the current side-by-side ghost text inputs with a progressive disclosure search UX — single input with dropdown suggestions, animated second input on artist confirmation, and polished state transitions
+**Depends on:** Phase 8 (working native bridge)
+**Requirements**: BRDG-01, BRDG-04, BRDG-06
+**Success Criteria** (what must be TRUE):
+  1. Single search input visible initially with standard dropdown autocomplete suggestions
+  2. Selecting a suggestion confirms "From" artist and animates a second input into view
+  3. Second input auto-focuses, full-width, with the same dropdown suggestion behavior
+  4. Both artists confirmed triggers bridge search automatically
+  5. State transitions (Idle → Searching → PathFound → PlaylistReady) are animated
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 9 to break down)
