@@ -1,10 +1,14 @@
-# Roadmap: EccoMeld — Bridge Discovery MVP
+# Roadmap: EccoMeld
 
-## Overview
+## Milestones
 
-EccoMeld adds Bridge Discovery to the existing Meld music client — a new tab where users pick two artists and the app finds a 5-7 hop genre path between them, then auto-plays a curated playlist through that journey. The work is entirely additive: all existing Meld functionality stays intact. Phases follow the technical dependency chain from the ground up: WebView infrastructure must be solid before the JS bridge, the JS bridge must work before the playlist builder, and playback must be verified before the UI that visualizes it. Spotify-dependent differentiators ship last so a Spotify auth fragility cannot block the core feature.
+- ✅ **v1.0 Bridge Discovery MVP** - Phases 1-9 (shipped 2026-04-05)
+- 🚧 **v2.0 Path Walker & Discovery** - Phases 10-14 (in progress)
 
 ## Phases
+
+<details>
+<summary>✅ v1.0 Bridge Discovery MVP (Phases 1-9) — SHIPPED 2026-04-05</summary>
 
 **Phase Numbering:**
 - Integer phases (1, 2, 3): Planned milestone work
@@ -13,14 +17,14 @@ EccoMeld adds Bridge Discovery to the existing Meld music client — a new tab w
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: WebView Foundation** - Bundle EccoPath as APK assets and verify IndexedDB-safe WebView serving (completed 2026-04-04)
-- [ ] **Phase 2: Bridge Tab + State Model** - Add Bridge tab to navigation and define all UI states
+- [x] **Phase 2: Bridge Tab + State Model** - Add Bridge tab to navigation and define all UI states (completed 2026-04-04)
 - [x] **Phase 3: JS Bridge** - Wire MeldBridgeInterface so EccoPath can send bridge results to Kotlin (completed 2026-04-04)
 - [x] **Phase 4: Artist Search + Bridge Trigger** - Two artist inputs with Last.fm autocomplete, loading feedback, error states (completed 2026-04-04)
-- [ ] **Phase 5: Playlist Builder + Auto-Play** - Translate bridge path to YT Music tracks and auto-play through existing queue
-- [ ] **Phase 6: Linear Path Result View** - Visualize the bridge journey with genre tags, listener counts, and playback highlight
-- [ ] **Phase 7: Spotify Integration** - Seed suggestions, Random Bridge, and known/unknown artist badges
-
-## Phase Details
+- [x] **Phase 5: Playlist Builder + Auto-Play** - Translate bridge path to YT Music tracks and auto-play through existing queue (completed 2026-04-04)
+- [x] **Phase 6: Linear Path Result View** - Visualize the bridge journey with genre tags, listener counts, and playback highlight (completed 2026-04-04)
+- [x] **Phase 7: Spotify Integration** - Seed suggestions, Random Bridge, and known/unknown artist badges (completed 2026-04-04)
+- [x] **Phase 8: Native Kotlin Bridge Algorithm** - Port beam search to native Kotlin coroutines with Room DB caching (completed 2026-04-05)
+- [x] **Phase 9: Bridge UI Redesign** - Progressive disclosure search UX with dropdown autocomplete and animated transitions (completed 2026-04-05)
 
 ### Phase 1: WebView Foundation
 **Goal**: EccoPath loads correctly in a WebView served from a stable HTTPS origin, IndexedDB persists across restarts, and the app is branded as EccoMeld
@@ -46,7 +50,7 @@ Plans:
   1. Bridge tab appears alongside existing Meld tabs (Home, Search, Library, etc.) and is tappable
   2. Tapping Bridge navigates to BridgeScreen without affecting any existing tab or its back stack
   3. All BridgeUiState transitions (Idle, Searching, PathFound, PlaylistReady, Error) exist in code and BridgeScreen responds to each — even if most show placeholder content
-**Plans:** 1 plan
+**Plans:** 1/1 plan complete
 
 Plans:
 - [x] 02-01-PLAN.md — Bridge tab navigation wiring + BridgeUiState sealed class + BridgeScreen placeholder
@@ -108,7 +112,7 @@ Plans:
   2. Each bridge artist node shows genre tags and Last.fm listener counts
   3. The currently-playing bridge artist is visually highlighted in the path view
   4. Path view persists and remains accessible while the playlist is playing — navigating away and back does not lose it
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 
 Plans:
 - [x] 06-01-PLAN.md — LastFM artist.getInfo API + BridgeViewModel metadata/now-playing logic
@@ -123,7 +127,7 @@ Plans:
   2. Tapping "Random Bridge" picks two genre-opposite artists from Spotify liked songs and starts a bridge automatically
   3. Bridge artists in the path view show a "NEW" badge for artists not in the user's Spotify history and a "known" badge for familiar ones
   4. If Spotify is not connected or auth fails, all Bridge features still work — seed suggestions and Random Bridge are simply hidden
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 **UI hint**: yes
 
 Plans:
@@ -131,27 +135,9 @@ Plans:
 - [x] 07-02-PLAN.md — Seed suggestion chip row + Random Bridge FAB in BridgeScreen
 - [x] 07-03-PLAN.md — Known/NEW familiarity badges in PathSheet + visual verification
 
-## Progress
-
-**Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9
-
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 1. WebView Foundation | 3/3 | Complete | 2026-04-04 |
-| 2. Bridge Tab + State Model | 1/1 | Complete | 2026-04-04 |
-| 3. JS Bridge | 3/3 | Complete | 2026-04-04 |
-| 4. Artist Search + Bridge Trigger | 3/3 | Complete | 2026-04-04 |
-| 5. Playlist Builder + Auto-Play | 2/2 | Complete | 2026-04-04 |
-| 6. Linear Path Result View | 2/2 | Complete | 2026-04-04 |
-| 7. Spotify Integration | 3/3 | Complete | 2026-04-04 |
-| 8. Native Kotlin Bridge Algorithm | 1/3 | In Progress|  |
-| 9. Bridge UI Redesign | 2/2 | Complete   | 2026-04-05 |
-
 ### Phase 8: Native Kotlin Bridge Algorithm
-
-**Goal:** Port the bridge beam search algorithm from TypeScript/WebView to native Kotlin coroutines with Room DB caching, eliminating the WebView dependency and cold cache performance problem
-**Depends on:** Phase 4 (Last.fm API client)
+**Goal**: Port the bridge beam search algorithm from TypeScript/WebView to native Kotlin coroutines with Room DB caching, eliminating the WebView dependency and cold cache performance problem
+**Depends on**: Phase 4
 **Requirements**: INFRA-01, BRDG-02, BRDG-03
 **Success Criteria** (what must be TRUE):
   1. Bidirectional beam search runs as a Kotlin coroutine without any WebView involvement
@@ -159,7 +145,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
   3. Bridge search completes for a known artist pair (e.g., Radiohead → Kendrick Lamar) and returns a valid 5-7 hop path
   4. Rate limiting prevents Last.fm API throttling (<=5 req/sec)
   5. BridgeViewModel calls the Kotlin bridge directly — no evaluateJavascript
-**Plans:** 1/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 - [x] 08-01-PLAN.md — LastFM getSimilarArtists API + Room entities + cache + rate limiter
@@ -167,9 +153,8 @@ Plans:
 - [x] 08-03-PLAN.md — BridgeViewModel rewiring + Hilt DI + updated tests
 
 ### Phase 9: Bridge UI Redesign
-
-**Goal:** Replace the current side-by-side ghost text inputs with a progressive disclosure search UX — single input with dropdown suggestions, animated second input on artist confirmation, and polished state transitions
-**Depends on:** Phase 8 (working native bridge)
+**Goal**: Replace the current side-by-side ghost text inputs with a progressive disclosure search UX — single input with dropdown suggestions, animated second input on artist confirmation, and polished state transitions
+**Depends on**: Phase 8
 **Requirements**: BRDG-01, BRDG-04, BRDG-06
 **Success Criteria** (what must be TRUE):
   1. Single search input visible initially with standard dropdown autocomplete suggestions
@@ -182,3 +167,103 @@ Plans:
 Plans:
 - [x] 09-01-PLAN.md — BridgeViewModel: replace ghost suffix with suggestion lists + clearFrom/clearTo + auto-trigger
 - [x] 09-02-PLAN.md — BridgeScreen: progressive disclosure UI with dropdown autocomplete + animated transitions
+
+</details>
+
+---
+
+### 🚧 v2.0 Path Walker & Discovery (In Progress)
+
+**Milestone Goal:** Add interactive Path Walker exploration mode with hyperbolic graph visualization and persistent bridge history. Users pick one artist, see 5 FALA nodes fanning out on a Poincare disk, tap to expand and walk — music plays at every step. Completed bridges and walks persist to Room DB for replay.
+
+- [ ] **Phase 10: PathWalker Foundation — ViewModel + Mode Toggle + Entry Points** - Refactor BridgeScreen with mode toggle, build PathWalkerViewModel with NodeState machine and FALA expansion, wire all entry points, improve track resolution
+- [ ] **Phase 11: Hyperbolic Math + Canvas Renderer** - Port computeHyperbolicLayout() to Kotlin with unit tests, build HyperbolicGraphCanvas composable with 7-state node rendering and pan/zoom gestures
+- [ ] **Phase 12: Interactive Graph — Expansion, Playback, and Active Path** - Wire tap-to-expand to FALA fetches + queue append, highlight the active path, support branching from explored nodes
+- [ ] **Phase 13: Artist Detail Sheet** - Bottom sheet on node tap with artist image, genre tags, listener count, and match score
+- [ ] **Phase 14: Bridge History Persistence** - Room migration with three new tables, history UI screen, bridge and walk replay
+
+## Phase Details
+
+### Phase 10: PathWalker Foundation — ViewModel + Mode Toggle + Entry Points
+**Goal**: Users can switch between Bridge and Walk modes in the Bridge tab, seed a Walk from any artist entry point in the app, and Path Walker resolves tracks more reliably than before
+**Depends on**: Phase 9
+**Requirements**: WALK-01, WALK-02, ENTRY-01, ENTRY-02, ENTRY-03, BRDG-08
+**Success Criteria** (what must be TRUE):
+  1. A segmented toggle (Bridge / Walk) appears at the top of the Bridge tab — tapping it switches modes without losing the other mode's in-progress state
+  2. User can type one artist name in Walk mode and see autocomplete suggestions, then confirm to seed the graph (which fetches and displays 5 FALA frontier nodes as a placeholder list)
+  3. Tapping "Path Walk" in any song's three-dot menu opens the Bridge tab in Walk mode pre-seeded with that song's artist
+  4. Tapping "Path Walk from here" on an artist page opens the Bridge tab in Walk mode pre-seeded with that artist
+  5. Opening the Bridge tab directly with Walk selected shows the empty-state search input ready for use
+  6. Track resolution for bridge and walk artists succeeds more often — "no tracks found" rate is visibly reduced compared to v1.0
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 11: Hyperbolic Math + Canvas Renderer
+**Goal**: A correct, performant Poincare disk renders on screen with all 7 node states visually distinct and pan/zoom gestures working accurately
+**Depends on**: Phase 10
+**Requirements**: WALK-03, WALK-05, WALK-06
+**Success Criteria** (what must be TRUE):
+  1. computeHyperbolicLayout() passes unit tests for known inputs — positions stay inside the disk boundary, deep-tree nodes do not produce NaN or Infinity coordinates
+  2. The Poincare disk renders with the seed artist at center, frontier nodes fanning outward, connected by geodesic arcs
+  3. All 7 node states (seed, frontier, loading, current, active, explored, error) are visually distinct — colored per state, animated transitions between states
+  4. User can pan the graph by dragging and pinch-to-zoom the disk — tapping a node after zooming in still hits the correct node (coordinate inversion applied)
+  5. At 100+ nodes, the canvas maintains smooth rendering — drawWithCache used for static layers, live layer for animated elements only
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 12: Interactive Graph — Expansion, Playback, and Active Path
+**Goal**: Tapping a frontier node fetches its FALA children, extends the graph, starts playing that artist's tracks, and the user's path through the graph is clearly visible and reenterable
+**Depends on**: Phase 11
+**Requirements**: WALK-04, WALK-07, WALK-08
+**Success Criteria** (what must be TRUE):
+  1. Tapping a frontier node transitions it to loading state, fetches 5 FALA children, transitions to explored, and adds children as new frontier nodes — all while the existing music keeps playing
+  2. 1-2 top tracks from the tapped artist are appended to the playback queue — music starts playing when the queue reaches that artist's tracks
+  3. The active path through the graph is visually highlighted (distinct edge color); explored-but-abandoned branches remain visible as dimmed nodes
+  4. Tapping any explored or active node re-enters the walk from that point — frontier nodes are fetched for that node's children and the active path is updated to reflect the rewind
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 13: Artist Detail Sheet
+**Goal**: Users can learn about any artist on the graph without leaving the walk
+**Depends on**: Phase 12
+**Requirements**: DETAIL-01
+**Success Criteria** (what must be TRUE):
+  1. Tapping an explored, active, or seed node opens a bottom sheet showing that artist's image, genre tags, Last.fm listener count, and similarity match score
+  2. The sheet dismisses without changing any node state — opening the sheet is non-destructive to the walk
+  3. Data loads from the existing BridgeArtistMetaEntity cache where available, with a shimmer placeholder while fetching
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 14: Bridge History Persistence
+**Goal**: Completed bridges and path walks are saved to Room DB and can be replayed from a history screen, so users never lose a discovery session
+**Depends on**: Phase 12
+**Requirements**: HIST-01, HIST-02, HIST-03
+**Success Criteria** (what must be TRUE):
+  1. Completing a bridge search persists it to a history list — closing and reopening the app shows the entry in history
+  2. Completing or abandoning a path walk session persists it with full graph state — closing and reopening shows the walk entry in history
+  3. A history screen (accessible from the Bridge tab header) lists past bridges and walks with session type, date, artists involved, and hop/step count
+  4. Tapping replay on a past bridge re-queues its stored tracks and begins playback immediately — no re-running the algorithm
+  5. Tapping replay on a past walk re-queues its stored tracks in walk order and begins playback immediately
+**Plans**: TBD
+
+## Progress
+
+**Execution Order:**
+Phases execute in numeric order: 10 → 11 → 12 → 13 → 14
+
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 1. WebView Foundation | v1.0 | 3/3 | Complete | 2026-04-04 |
+| 2. Bridge Tab + State Model | v1.0 | 1/1 | Complete | 2026-04-04 |
+| 3. JS Bridge | v1.0 | 3/3 | Complete | 2026-04-04 |
+| 4. Artist Search + Bridge Trigger | v1.0 | 3/3 | Complete | 2026-04-04 |
+| 5. Playlist Builder + Auto-Play | v1.0 | 2/2 | Complete | 2026-04-04 |
+| 6. Linear Path Result View | v1.0 | 2/2 | Complete | 2026-04-04 |
+| 7. Spotify Integration | v1.0 | 3/3 | Complete | 2026-04-04 |
+| 8. Native Kotlin Bridge Algorithm | v1.0 | 3/3 | Complete | 2026-04-05 |
+| 9. Bridge UI Redesign | v1.0 | 2/2 | Complete | 2026-04-05 |
+| 10. PathWalker Foundation | v2.0 | 0/? | Not started | - |
+| 11. Hyperbolic Math + Canvas | v2.0 | 0/? | Not started | - |
+| 12. Interactive Graph | v2.0 | 0/? | Not started | - |
+| 13. Artist Detail Sheet | v2.0 | 0/? | Not started | - |
+| 14. Bridge History Persistence | v2.0 | 0/? | Not started | - |

@@ -76,27 +76,28 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| WALK-01 | — | Pending |
-| WALK-02 | — | Pending |
-| WALK-03 | — | Pending |
-| WALK-04 | — | Pending |
-| WALK-05 | — | Pending |
-| WALK-06 | — | Pending |
-| WALK-07 | — | Pending |
-| WALK-08 | — | Pending |
-| ENTRY-01 | — | Pending |
-| ENTRY-02 | — | Pending |
-| ENTRY-03 | — | Pending |
-| DETAIL-01 | — | Pending |
-| HIST-01 | — | Pending |
-| HIST-02 | — | Pending |
-| HIST-03 | — | Pending |
-| BRDG-08 | — | Pending |
+| WALK-01 | Phase 10 | Pending |
+| WALK-02 | Phase 10 | Pending |
+| WALK-03 | Phase 11 | Pending |
+| WALK-04 | Phase 12 | Pending |
+| WALK-05 | Phase 11 | Pending |
+| WALK-06 | Phase 11 | Pending |
+| WALK-07 | Phase 12 | Pending |
+| WALK-08 | Phase 12 | Pending |
+| ENTRY-01 | Phase 10 | Pending |
+| ENTRY-02 | Phase 10 | Pending |
+| ENTRY-03 | Phase 10 | Pending |
+| DETAIL-01 | Phase 13 | Pending |
+| HIST-01 | Phase 14 | Pending |
+| HIST-02 | Phase 14 | Pending |
+| HIST-03 | Phase 14 | Pending |
+| BRDG-08 | Phase 10 | Pending |
 
 **Coverage:**
 - v2.0 requirements: 16 total
-- Mapped to phases: 0
-- Unmapped: 16
+- Mapped to phases: 16
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-05*
+*Traceability updated: 2026-04-05 (roadmap created)*
