@@ -41,8 +41,8 @@ Discover music you didn't know you wanted through meaningful, human-like genre b
 
 - [x] Bridge tab in bottom navigation with state model — Validated in Phase 2
 - [ ] Bridge tab artist search inputs (From/To artist)
-- [ ] WebView bridge computation — bundled EccoPath (git submodule) runs beam search locally
-- [ ] JS bridge interface — MeldBridge.createPlaylist(json) sends bridge path to Kotlin
+- [x] Native Kotlin bridge algorithm — bidirectional beam search with Room DB caching, replaces WebView path — Validated in Phase 8
+- [x] JS bridge interface — MeldBridge.createPlaylist(json) sends bridge path to Kotlin — Validated in Phase 3 (superseded by native Kotlin in Phase 8)
 - [ ] Linear path result view — seed at top, target at bottom, bridge artists between with genre tags and listener counts
 - [ ] Unified playlist builder — 2 popular + 3-5 deep cuts per bridge artist, genre-transition order
 - [ ] Auto-play on bridge completion — playlist feeds into existing Meld queue/player
@@ -61,7 +61,7 @@ Discover music you didn't know you wanted through meaningful, human-like genre b
 - Walk & Listen mode — P2, deferred
 - Daily Bridge notifications — P2, deferred
 - Taste drift analytics — P2, deferred
-- Native Kotlin port of bridge algorithm — post-MVP, WebView-first approach validated
+- Native Kotlin port of bridge algorithm — completed in Phase 8 (moved to Active/Validated)
 - Removing or modifying existing Meld features — not in scope, everything stays
 - Package renaming (com.metrolist.music) — deferred, keep existing for now
 - Google Play distribution — YT Music stream extraction would be rejected
@@ -91,7 +91,7 @@ Discover music you didn't know you wanted through meaningful, human-like genre b
 
 - **Platform**: Android only (SDK 26+, targeting SDK 36)
 - **Playback**: Must use existing Media3/ExoPlayer stack — no rewrite
-- **Bridge algorithm**: WebView + JS bridge for MVP — no native Kotlin port yet
+- **Bridge algorithm**: Native Kotlin bidirectional beam search with Room DB caching (Phase 8); WebView retained but dormant
 - **EccoPath bundling**: Git submodule, built assets packaged in APK — works offline
 - **Distribution**: GitHub releases + sideload APK only
 - **Branding**: App name "EccoMeld" with EccoMuse logo (validated Phase 1)
@@ -127,4 +127,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-04 after Phase 2 completion — Bridge Tab + State Model*
+*Last updated: 2026-04-05 after Phase 8 completion — Native Kotlin Bridge Algorithm*
