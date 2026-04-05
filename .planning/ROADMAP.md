@@ -146,7 +146,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 | 6. Linear Path Result View | 2/2 | Complete | 2026-04-04 |
 | 7. Spotify Integration | 3/3 | Complete | 2026-04-04 |
 | 8. Native Kotlin Bridge Algorithm | 1/3 | In Progress|  |
-| 9. Bridge UI Redesign | 0/? | Not started | - |
+| 9. Bridge UI Redesign | 0/2 | Not started | - |
 
 ### Phase 8: Native Kotlin Bridge Algorithm
 
@@ -177,7 +177,8 @@ Plans:
   3. Second input auto-focuses, full-width, with the same dropdown suggestion behavior
   4. Both artists confirmed triggers bridge search automatically
   5. State transitions (Idle → Searching → PathFound → PlaylistReady) are animated
-**Plans:** 0 plans
+**Plans:** 2 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 9 to break down)
+- [ ] 09-01-PLAN.md — BridgeViewModel: replace ghost suffix with suggestion lists + clearFrom/clearTo + auto-trigger
+- [ ] 09-02-PLAN.md — BridgeScreen: progressive disclosure UI with dropdown autocomplete + animated transitions
