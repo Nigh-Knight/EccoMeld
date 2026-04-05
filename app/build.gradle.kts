@@ -18,43 +18,53 @@ plugins {
 val buildEccoPath by tasks.registering(Exec::class) {
     description = "Build EccoPath Next.js static export for Android"
     group = "eccopath"
-    workingDir = file("${rootProject.projectDir}/eccopath")
+    val eccoDir = rootProject.projectDir.resolve("eccopath")
+    val originalConfig = eccoDir.resolve("next.config.ts")
+    val backupConfig = eccoDir.resolve("next.config.ts.bak")
+    val androidConfig = eccoDir.resolve("next.config.android.ts")
+    workingDir = eccoDir
+    commandLine("node", eccoDir.resolve("node_modules/.bin/next").absolutePath, "build")
     // Next.js only reads next.config.ts by name — temporarily swap to Android config
     doFirst {
-        val eccoDir = file("${rootProject.projectDir}/eccopath")
-        val original = file("$eccoDir/next.config.ts")
-        val backup = file("$eccoDir/next.config.ts.bak")
-        val android = file("$eccoDir/next.config.android.ts")
-        original.copyTo(backup, overwrite = true)
-        android.copyTo(original, overwrite = true)
+        originalConfig.copyTo(backupConfig, overwrite = true)
+        androidConfig.copyTo(originalConfig, overwrite = true)
     }
-    commandLine("node", "${rootProject.projectDir}/eccopath/node_modules/.bin/next", "build")
     doLast {
         // Restore original config
-        val eccoDir = file("${rootProject.projectDir}/eccopath")
-        val original = file("$eccoDir/next.config.ts")
-        val backup = file("$eccoDir/next.config.ts.bak")
-        if (backup.exists()) {
-            backup.copyTo(original, overwrite = true)
-            backup.delete()
+        if (backupConfig.exists()) {
+            backupConfig.copyTo(originalConfig, overwrite = true)
+            backupConfig.delete()
         }
-        
         ProcessBuilder("node", "scripts/strip-crossorigin.mjs")
-            .directory(file("${rootProject.projectDir}/eccopath"))
+            .directory(eccoDir)
             .inheritIO()
             .start()
             .waitFor()
     }
-    inputs.dir("${rootProject.projectDir}/eccopath/lib")
-    inputs.dir("${rootProject.projectDir}/eccopath/app")
-    inputs.file("${rootProject.projectDir}/eccopath/next.config.android.ts")
-    outputs.dir("${rootProject.projectDir}/eccopath/out")
+    inputs.dir(eccoDir.resolve("lib"))
+    inputs.dir(eccoDir.resolve("app"))
+    inputs.file(androidConfig)
+    outputs.dir(eccoDir.resolve("out"))
 }
 
 val copyEccoPathAssets by tasks.registering(Copy::class) {
     dependsOn(buildEccoPath)
     from("${rootProject.projectDir}/eccopath/out")
     into("${projectDir}/src/main/assets/eccopath")
+}
+
+// Rename _next -> next in assets after copy — Android AAPT strips directories starting with _
+val renameNextDir by tasks.registering {
+    dependsOn(copyEccoPathAssets)
+    val assetsDir = file("${projectDir}/src/main/assets/eccopath")
+    doLast {
+        val underscoreNext = File(assetsDir, "_next")
+        val plainNext = File(assetsDir, "next")
+        if (underscoreNext.exists()) {
+            if (plainNext.exists()) plainNext.deleteRecursively()
+            underscoreNext.renameTo(plainNext)
+        }
+    }
 }
 
 android {
@@ -225,16 +235,15 @@ android {
 }
 
 tasks.named("preBuild").configure {
-    dependsOn(copyEccoPathAssets)
+    dependsOn(renameNextDir)
     dependsOn(generateProto)
 }
-
-val protocVersion = libs.versions.protobuf.get()
 
 val downloadProtoc by tasks.registering {
     description = "Download protoc matching project protobuf version"
     val protocDir = layout.buildDirectory.dir("protoc")
     val protocBin = protocDir.map { it.file("bin/protoc") }
+    val protocVer = libs.versions.protobuf.get() // captured eagerly, not from outer scope
     outputs.dir(protocDir)
     doLast {
         val dir = protocDir.get().asFile
@@ -249,8 +258,7 @@ val downloadProtoc by tasks.registering {
             else -> error("Unsupported platform: $osName/$arch")
         }
         val zipFile = File(dir, "protoc.zip")
-        // Java protobuf runtime uses 4.x versioning; protoc releases use the base version without the leading "4."
-        val releaseVersion = protocVersion.removePrefix("4.")
+        val releaseVersion = protocVer.removePrefix("4.")
         val url = "https://github.com/protocolbuffers/protobuf/releases/download/v$releaseVersion/protoc-$releaseVersion-$platform.zip"
         ant.invokeMethod("get", mapOf("src" to url, "dest" to zipFile))
         ant.invokeMethod("unzip", mapOf("src" to zipFile, "dest" to dir))

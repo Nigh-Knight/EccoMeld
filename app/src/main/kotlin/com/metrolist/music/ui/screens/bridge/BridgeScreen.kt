@@ -77,7 +77,12 @@ import com.metrolist.music.viewmodels.BridgeViewModel
 
 sealed class BridgeUiState {
     @Immutable object Idle : BridgeUiState()
-    @Immutable data class Searching(val foundHops: Int = 0, val totalHops: Int = 0) : BridgeUiState()
+    @Immutable data class Searching(
+        val message: String = "",
+        val progress: Float = -1f,
+        val foundHops: Int = 0,
+        val totalHops: Int = 0,
+    ) : BridgeUiState()
     @Immutable data class PathFound(val path: List<String>) : BridgeUiState()
     @Immutable data class PlaylistReady(val path: List<String>, val nowPlayingIndex: Int = 0) : BridgeUiState()
     @Immutable data class Error(val message: String) : BridgeUiState()
@@ -396,10 +401,13 @@ fun BridgeScreen(navController: NavController) {
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        // Reserve space for the top app bar + status bar so the sheet doesn't slide under it
+        val topInset = LocalPlayerAwareWindowInsets.current
+            .asPaddingValues().calculateTopPadding() + 64.dp
         val pathSheetState = rememberBottomSheetState(
             dismissedBound = 0.dp,
-            expandedBound = maxHeight,
-            collapsedBound = 220.dp,
+            expandedBound = maxHeight - topInset,
+            collapsedBound = 148.dp,
             initialAnchor = dismissedAnchor,
         )
 
@@ -435,7 +443,10 @@ fun BridgeScreen(navController: NavController) {
                     placeholder = stringResource(R.string.bridge_from_placeholder),
                     label = stringResource(R.string.bridge_from_label),
                     enabled = !isSearching,
-                    onFocusChanged = { fromHasFocus = it },
+                    onFocusChanged = { focused ->
+                        fromHasFocus = focused
+                        if (!focused) viewModel.confirmFrom()
+                    },
                     modifier = Modifier.weight(1f),
                 )
                 GhostTextField(
@@ -446,7 +457,10 @@ fun BridgeScreen(navController: NavController) {
                     placeholder = stringResource(R.string.bridge_to_placeholder),
                     label = stringResource(R.string.bridge_to_label),
                     enabled = !isSearching,
-                    onFocusChanged = { toHasFocus = it },
+                    onFocusChanged = { focused ->
+                        toHasFocus = focused
+                        if (!focused) viewModel.confirmTo()
+                    },
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -464,9 +478,14 @@ fun BridgeScreen(navController: NavController) {
             Spacer(Modifier.height(8.dp))
 
             // Find Bridge button (D-09: disabled when running or inputs empty)
+            // Enable based on query text (not confirmed) — onClick confirms before bridging
             Button(
-                onClick = { viewModel.findBridge() },
-                enabled = fromConfirmed.isNotBlank() && toConfirmed.isNotBlank() && !isSearching,
+                onClick = {
+                    viewModel.confirmFrom()
+                    viewModel.confirmTo()
+                    viewModel.findBridge()
+                },
+                enabled = fromQuery.isNotBlank() && toQuery.isNotBlank() && !isSearching,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
@@ -497,15 +516,10 @@ fun BridgeScreen(navController: NavController) {
                     )
                 }
                 is BridgeUiState.Searching -> {
-                    // Progress bar — determinate when hops known, indeterminate otherwise (D-06, D-07)
-                    val progress = if (state.totalHops > 0)
-                        state.foundHops.toFloat() / state.totalHops.toFloat()
-                    else
-                        null
-
-                    if (progress != null) {
+                    // Progress bar — determinate when progress known, indeterminate otherwise
+                    if (state.progress in 0f..1f) {
                         LinearProgressIndicator(
-                            progress = { progress },
+                            progress = { state.progress },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 24.dp),
@@ -518,9 +532,9 @@ fun BridgeScreen(navController: NavController) {
                         )
                     }
                     Spacer(Modifier.height(8.dp))
-                    // Progress message text
+                    // Real progress message from EccoPath (e.g., "Analyzing Radiohead and Björk...", "Searching from Radiohead...")
                     Text(
-                        text = stringResource(R.string.bridge_searching_hint),
+                        text = state.message.ifBlank { stringResource(R.string.bridge_searching_hint) },
                         style = MaterialTheme.typography.bodyLarge,
                         textAlign = TextAlign.Center,
                     )
@@ -623,11 +637,15 @@ fun BridgeScreen(navController: NavController) {
                 state = pathSheetState,
                 onDismiss = { /* allow dismiss — re-openable via Show Path button */ },
                 collapsedContent = {
-                    // Collapsed peek: drag handle centered at top
+                    // Collapsed peek: drag handle + surface background
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(pathSheetState.collapsedBound)
+                            .background(
+                                MaterialTheme.colorScheme.surfaceContainer,
+                                RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+                            )
                             .padding(16.dp),
                         contentAlignment = Alignment.TopCenter,
                     ) {
@@ -648,6 +666,7 @@ fun BridgeScreen(navController: NavController) {
                     artistMetadata = artistMetadata,
                     nowPlayingIndex = nowPlayingIndex,
                     familiarityMap = artistFamiliarity,
+                    modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainer),
                 )
             }
         }
