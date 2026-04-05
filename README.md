@@ -1,6 +1,7 @@
 <div align="center">
-
-<img src="https://hcti.io/v1/image/019d5f73-a488-729d-a541-52d6b194b286" alt="EccoMeld - Bridge Discovery for Meld" width="800"/>
+<img src="app/src/main/res/mipmap-xhdpi/ic_launcher_foreground.png" width="120" height="120"/>
+<h1>EccoMeld</h1>
+<p><em>Bridge Discovery for Meld</em></p>
 
 [![Latest release](https://img.shields.io/github/v/release/Nigh-Knight/EccoMeld?style=for-the-badge)](https://github.com/Nigh-Knight/EccoMeld/releases/latest)
 [![GitHub license](https://img.shields.io/github/license/Nigh-Knight/EccoMeld?style=for-the-badge)](https://github.com/Nigh-Knight/EccoMeld/blob/eccomeld/LICENSE)
@@ -15,7 +16,7 @@ All existing Meld features stay fully intact — home feed, search, library, pla
 
 <div align="center">
 
-<img src="https://hcti.io/v1/image/019d5f73-ec61-7664-8fe0-33df649143e6" alt="How Bridge Discovery Works" width="800"/>
+<img src="https://hcti.io/v1/image/019d5f79-731f-7c0d-91d2-d6b25731e663" alt="How Bridge Discovery Works" width="800"/>
 
 </div>
 
@@ -23,7 +24,7 @@ All existing Meld features stay fully intact — home feed, search, library, pla
 
 <div align="center">
 
-<img src="https://hcti.io/v1/image/019d5f75-9ab2-7b9b-9b4f-704b98506b03" alt="Features" width="800"/>
+<img src="https://hcti.io/v1/image/019d5f79-c82e-7194-8b4f-d6d3ceadc3f7" alt="Features" width="800"/>
 
 </div>
 
