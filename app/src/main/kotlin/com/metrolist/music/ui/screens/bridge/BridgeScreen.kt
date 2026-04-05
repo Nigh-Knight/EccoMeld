@@ -295,8 +295,9 @@ fun BridgeScreen(navController: NavController) {
     val uiState by viewModel.uiState.collectAsState()
     val fromQuery by viewModel.fromQuery.collectAsState()
     val toQuery by viewModel.toQuery.collectAsState()
-    val fromGhostSuffix by viewModel.fromGhostSuffix.collectAsState()
-    val toGhostSuffix by viewModel.toGhostSuffix.collectAsState()
+    // Ghost suffix removed in Phase 9 Plan 01 — Plan 02 replaces this with suggestion dropdowns
+    val fromGhostSuffix = ""
+    val toGhostSuffix = ""
     val fromConfirmed by viewModel.fromConfirmedArtist.collectAsState()
     val toConfirmed by viewModel.toConfirmedArtist.collectAsState()
     val isSearching = uiState is BridgeUiState.Searching
