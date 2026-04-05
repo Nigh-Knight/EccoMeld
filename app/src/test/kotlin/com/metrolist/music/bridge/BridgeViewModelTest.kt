@@ -134,20 +134,21 @@ class BridgeViewModelTest {
 
     @Test
     fun confirmFrom_stores_confirmed_artist() {
-        // BRDG-01: confirmFrom() confirms the raw input query as the confirmed artist.
+        // BRDG-01: confirmFrom() without a ghost (no debounce has fired) falls back to raw input.
+        // The confirmed artist should equal whatever is currently in fromQuery.
         val (viewModel, _) = buildViewModel()
 
         viewModel.onFromQueryChanged("Radiohead")
-        // Suggestions have NOT been fetched yet (no coroutine advance) — confirmFrom uses raw input
+        // Ghost has NOT been fetched yet (no coroutine advance) — confirmFrom uses raw input
         viewModel.confirmFrom()
 
         assertEquals(
-            "Confirmed artist should equal raw query",
+            "Confirmed artist should equal raw query when no ghost is available",
             "Radiohead",
             viewModel.fromConfirmedArtist.value,
         )
-        // Suggestions must be cleared after confirm
-        assertEquals("fromSuggestions should be empty after confirm", emptyList<String>(), viewModel.fromSuggestions.value)
+        // Ghost suffix must be cleared after confirm
+        assertEquals("Ghost suffix should be empty after confirm", "", viewModel.fromGhostSuffix.value)
     }
 
     @Ignore("Requires live LastFM network and coroutine scheduler to advance past 300ms debounce — integration test only")
@@ -197,17 +198,18 @@ class BridgeViewModelTest {
     }
 
     @Test
-    fun blank_query_clears_suggestions() {
-        // Edge case: empty query must clear suggestions synchronously (no debounce needed).
+    fun blank_query_clears_ghost_suffix() {
+        // Edge case: empty query must clear ghost suffix synchronously (no debounce needed).
         val (viewModel, _) = buildViewModel()
 
+        // Simulate ghost suffix being set (directly via state — would normally come from debounce)
         viewModel.onFromQueryChanged("Rad") // sets query
         viewModel.onFromQueryChanged("") // clears to blank
 
         assertEquals(
-            "fromSuggestions should be cleared immediately on blank query",
-            emptyList<String>(),
-            viewModel.fromSuggestions.value,
+            "Ghost suffix should be cleared immediately on blank query",
+            "",
+            viewModel.fromGhostSuffix.value,
         )
         assertEquals(
             "Confirmed artist should be cleared when query changes",
@@ -233,160 +235,6 @@ class BridgeViewModelTest {
             "State should remain Idle when confirmed artists are not set",
             BridgeUiState.Idle,
             viewModel.uiState.value,
-        )
-        assertFalse("isRunning should be false", viewModel.isRunning)
-    }
-
-    // --- Suggestion list tests (BRDG-01, Phase 9 Plan 01) ---
-
-    @Test
-    fun fromSuggestions_populated_on_query_change() = runTest {
-        // After onFromQueryChanged + debounce elapses, fromSuggestions is populated from
-        // the LastFM response. We inject suggestions directly via the internal StateFlow to
-        // verify the StateFlow is exposed correctly — actual LastFM calls are integration-tested.
-        val (viewModel, _) = buildViewModel()
-
-        // Inject suggestions directly to verify the StateFlow type and exposure are correct
-        val fromSuggestionsField = BridgeViewModel::class.java.getDeclaredField("_fromSuggestions")
-        fromSuggestionsField.isAccessible = true
-        @Suppress("UNCHECKED_CAST")
-        val fromSuggestionsFlow = fromSuggestionsField.get(viewModel)
-            as kotlinx.coroutines.flow.MutableStateFlow<List<String>>
-
-        val fakeArtists = listOf("Radiohead", "Radio 4", "Radioheed", "Radio Moscow", "Radio Birdman")
-        fromSuggestionsFlow.value = fakeArtists
-
-        // fromSuggestions public StateFlow must reflect injected value
-        assertTrue(
-            "fromSuggestions should be non-empty after population",
-            viewModel.fromSuggestions.value.isNotEmpty()
-        )
-        assertEquals(fakeArtists, viewModel.fromSuggestions.value)
-
-        // Verify blank query clears suggestions (exercises the real code path)
-        viewModel.onFromQueryChanged("")
-        advanceUntilIdle()
-        assertEquals(
-            "fromSuggestions should be empty after blank query clears them",
-            emptyList<String>(),
-            viewModel.fromSuggestions.value
-        )
-    }
-
-    @Test
-    fun fromSuggestions_cleared_on_blank_query() = runTest {
-        // onFromQueryChanged("") must immediately clear fromSuggestions without waiting for debounce.
-        val (viewModel, _) = buildViewModel()
-
-        viewModel.onFromQueryChanged("")
-        advanceUntilIdle()
-
-        assertEquals(
-            "fromSuggestions should be empty on blank query",
-            emptyList<String>(),
-            viewModel.fromSuggestions.value
-        )
-    }
-
-    @Test
-    fun toSuggestions_populated_on_query_change() = runTest {
-        // Same as fromSuggestions_populated but for the To input.
-        // We inject suggestions directly to verify the StateFlow type and exposure are correct.
-        val (viewModel, _) = buildViewModel()
-
-        val toSuggestionsField = BridgeViewModel::class.java.getDeclaredField("_toSuggestions")
-        toSuggestionsField.isAccessible = true
-        @Suppress("UNCHECKED_CAST")
-        val toSuggestionsFlow = toSuggestionsField.get(viewModel)
-            as kotlinx.coroutines.flow.MutableStateFlow<List<String>>
-
-        val fakeArtists = listOf("Kendrick Lamar", "Kendall Cross", "Kendra Beall", "Ken Boothe", "Kennedy")
-        toSuggestionsFlow.value = fakeArtists
-
-        assertEquals(fakeArtists, viewModel.toSuggestions.value)
-
-        // Verify blank query clears toSuggestions (exercises the real code path)
-        viewModel.onToQueryChanged("")
-        advanceUntilIdle()
-        assertEquals(emptyList<String>(), viewModel.toSuggestions.value)
-    }
-
-    @Test
-    fun clearFrom_resets_all_from_state() = runTest {
-        // clearFrom() must reset fromQuery, fromConfirmedArtist, and fromSuggestions to empty.
-        val (viewModel, _) = buildViewModel()
-
-        // Populate state
-        viewModel.onFromQueryChanged("Radiohead")
-        viewModel.confirmFrom()
-
-        // Now clear
-        viewModel.clearFrom()
-
-        assertEquals("fromQuery should be empty after clearFrom", "", viewModel.fromQuery.value)
-        assertEquals("fromConfirmedArtist should be empty after clearFrom", "", viewModel.fromConfirmedArtist.value)
-        assertEquals("fromSuggestions should be empty after clearFrom", emptyList<String>(), viewModel.fromSuggestions.value)
-    }
-
-    @Test
-    fun clearTo_resets_all_to_state() = runTest {
-        // clearTo() must reset toQuery, toConfirmedArtist, and toSuggestions to empty.
-        val (viewModel, _) = buildViewModel()
-
-        // Populate state
-        viewModel.onToQueryChanged("Kendrick Lamar")
-        viewModel.confirmTo()
-
-        // Now clear
-        viewModel.clearTo()
-
-        assertEquals("toQuery should be empty after clearTo", "", viewModel.toQuery.value)
-        assertEquals("toConfirmedArtist should be empty after clearTo", "", viewModel.toConfirmedArtist.value)
-        assertEquals("toSuggestions should be empty after clearTo", emptyList<String>(), viewModel.toSuggestions.value)
-    }
-
-    @Test
-    fun confirmTo_autoTriggers_when_both_confirmed() = runTest {
-        // D-05: After confirmTo(), if both artists are confirmed, findBridge() is auto-triggered.
-        val mockAlgorithm = mock<BridgeAlgorithm>()
-        whenever(mockAlgorithm.findBridge(any(), any(), any()))
-            .thenReturn(BridgeResult(found = false, path = emptyList()))
-        val mockPlaylistBuilder = mock<BridgePlaylistBuilder>()
-        val mockWebView = mock<WebView>()
-        val viewModel = BridgeViewModel(
-            mockWebView, mock<MeldBridgeInterface>(), mockPlaylistBuilder,
-            mock<MusicDatabase>(), mockAlgorithm
-        )
-
-        // Confirm from first (should NOT trigger bridge)
-        viewModel.onFromQueryChanged("Radiohead")
-        viewModel.confirmFrom()
-        assertEquals("State should remain Idle after confirmFrom alone", BridgeUiState.Idle, viewModel.uiState.value)
-
-        // Now confirm to — should auto-trigger bridge
-        viewModel.onToQueryChanged("Kendrick Lamar")
-        viewModel.confirmTo()
-        advanceUntilIdle()
-
-        // State should have transitioned away from Idle (to Searching or beyond)
-        assertTrue(
-            "uiState should transition from Idle when both artists confirmed via confirmTo",
-            viewModel.uiState.value !is BridgeUiState.Idle
-        )
-    }
-
-    @Test
-    fun confirmFrom_does_not_trigger_bridge_alone() {
-        // D-05: confirmFrom() must NOT auto-trigger findBridge() — only confirmTo() does.
-        val (viewModel, _) = buildViewModel()
-
-        viewModel.onFromQueryChanged("Radiohead")
-        viewModel.confirmFrom()
-
-        assertEquals(
-            "uiState should remain Idle after confirmFrom with no toConfirmedArtist",
-            BridgeUiState.Idle,
-            viewModel.uiState.value
         )
         assertFalse("isRunning should be false", viewModel.isRunning)
     }

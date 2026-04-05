@@ -6,21 +6,14 @@
 package com.metrolist.music.ui.screens.bridge
 
 import android.widget.Toast
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
@@ -39,11 +32,8 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -56,18 +46,14 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -77,7 +63,6 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
@@ -103,68 +88,86 @@ sealed class BridgeUiState {
     @Immutable data class Error(val message: String) : BridgeUiState()
 }
 
-/**
- * Reusable search input with dropdown autocomplete for artist name entry.
- * Styled to match the app's surfaceVariant + RoundedCornerShape(8.dp) pattern.
- * Width-matched dropdown via onGloballyPositioned (Research Pitfall 1).
- * No confirm-on-focus-loss behaviour (Research Pitfall 4).
- */
 @Composable
-private fun ArtistSearchInput(
-    query: String,
-    suggestions: List<String>,
-    onQueryChange: (String) -> Unit,
-    onSuggestionSelected: (String) -> Unit,
+private fun GhostTextField(
+    value: String,
+    ghostSuffix: String,
+    onValueChange: (String) -> Unit,
+    onConfirm: () -> Unit,
     placeholder: String,
+    label: String,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    onFocusChanged: ((Boolean) -> Unit)? = null,
 ) {
+    // Use shared text style for pixel-perfect ghost alignment (Research Pitfall 1)
     val inputTextStyle = MaterialTheme.typography.bodyLarge.copy(
         color = MaterialTheme.colorScheme.onSurface
     )
 
-    var showDropdown by remember { mutableStateOf(false) }
-    var boxWidthPx by remember { mutableIntStateOf(0) }
-    val density = LocalDensity.current
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .onGloballyPositioned { coords -> boxWidthPx = coords.size.width },
-    ) {
+    Column(modifier = modifier) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(4.dp))
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(48.dp)
+                .height(48.dp)  // Accessibility touch target
                 .background(
                     MaterialTheme.colorScheme.surfaceVariant,
                     RoundedCornerShape(8.dp)
                 )
         ) {
+            // Ghost text layer (behind real input)
+            if (ghostSuffix.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .matchParentSize()
+                        .padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Invisible spacer matching user-typed text width
+                    Text(
+                        text = value,
+                        style = inputTextStyle,
+                        color = Color.Transparent,
+                        maxLines = 1,
+                    )
+                    // Ghost suffix at 38% opacity (UI-SPEC color contract)
+                    Text(
+                        text = ghostSuffix,
+                        style = inputTextStyle,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                        maxLines = 1,
+                        modifier = Modifier.semantics { invisibleToUser() },
+                    )
+                }
+            }
+            // Real input field on top
             BasicTextField(
-                value = query,
-                onValueChange = { newValue ->
-                    onQueryChange(newValue)
-                    showDropdown = newValue.isNotBlank()
-                },
+                value = value,
+                onValueChange = onValueChange,
                 enabled = enabled,
                 singleLine = true,
                 textStyle = inputTextStyle,
                 keyboardOptions = KeyboardOptions(
                     imeAction = ImeAction.Done,
-                    autoCorrect = false,
+                    autoCorrect = false  // Research Open Question 2 — suppress IME autocomplete
                 ),
                 keyboardActions = KeyboardActions(
-                    onDone = { /* no confirm-on-done — user must tap a suggestion */ }
+                    onDone = { onConfirm() }
                 ),
                 decorationBox = { innerTextField ->
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(horizontal = 12.dp),
-                        contentAlignment = Alignment.CenterStart,
+                        contentAlignment = Alignment.CenterStart
                     ) {
-                        if (query.isEmpty()) {
+                        if (value.isEmpty()) {
                             Text(
                                 text = placeholder,
                                 style = inputTextStyle.copy(
@@ -178,26 +181,23 @@ private fun ArtistSearchInput(
                 },
                 modifier = Modifier
                     .fillMaxSize()
-                    .onFocusChanged { focusState ->
-                        showDropdown = focusState.isFocused && query.isNotBlank() && suggestions.isNotEmpty()
-                    },
+                    .then(
+                        if (onFocusChanged != null) {
+                            Modifier.onFocusChanged { onFocusChanged(it.isFocused) }
+                        } else {
+                            Modifier
+                        }
+                    ),
             )
         }
-
-        DropdownMenu(
-            expanded = showDropdown && suggestions.isNotEmpty(),
-            onDismissRequest = { showDropdown = false },
-            modifier = Modifier.width(with(density) { boxWidthPx.toDp() }),
-        ) {
-            suggestions.forEach { suggestion ->
-                DropdownMenuItem(
-                    text = { Text(suggestion) },
-                    onClick = {
-                        onSuggestionSelected(suggestion)
-                        showDropdown = false
-                    },
-                )
-            }
+        // Ghost confirmation hint (UI-SPEC: "Tab to confirm" when ghost visible)
+        if (ghostSuffix.isNotEmpty() && enabled) {
+            Text(
+                text = stringResource(R.string.bridge_ghost_confirm_hint),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                modifier = Modifier.padding(top = 2.dp),
+            )
         }
     }
 }
@@ -295,12 +295,13 @@ fun BridgeScreen(navController: NavController) {
     val uiState by viewModel.uiState.collectAsState()
     val fromQuery by viewModel.fromQuery.collectAsState()
     val toQuery by viewModel.toQuery.collectAsState()
-    val fromSuggestions by viewModel.fromSuggestions.collectAsState()
-    val toSuggestions by viewModel.toSuggestions.collectAsState()
+    val fromGhostSuffix by viewModel.fromGhostSuffix.collectAsState()
+    val toGhostSuffix by viewModel.toGhostSuffix.collectAsState()
     val fromConfirmed by viewModel.fromConfirmedArtist.collectAsState()
     val toConfirmed by viewModel.toConfirmedArtist.collectAsState()
     val isSearching = uiState is BridgeUiState.Searching
     val artistMetadata by viewModel.artistMetadata.collectAsState()
+
     val artistFamiliarity by viewModel.artistFamiliarity.collectAsState()
 
     // Seed suggestions state (SPOT-01, SPOT-02)
@@ -309,15 +310,16 @@ fun BridgeScreen(navController: NavController) {
     val isFabLoading by viewModel.isFabLoading.collectAsState()
     val randomBridgeToast by viewModel.randomBridgeToast.collectAsState()
 
+    // Focus tracking for D-01 chip fill priority logic
+    var fromHasFocus by remember { mutableStateOf(false) }
+    var toHasFocus by remember { mutableStateOf(false) }
+
     val playerConnection = LocalPlayerConnection.current
     val isBuilding by viewModel.isBuilding.collectAsState()
     val showQueueDialog by viewModel.showQueueDialog.collectAsState()
     val buildFailed by viewModel.buildFailed.collectAsState()
 
     val context = LocalContext.current
-
-    // FocusRequester for second input auto-focus after From confirmation (D-04)
-    val toFocusRequester = remember { FocusRequester() }
 
     // Observe now-playing artist for highlight tracking (D-05, BRDG-05)
     val mediaMetadata by playerConnection?.mediaMetadata?.collectAsState()
@@ -338,13 +340,6 @@ fun BridgeScreen(navController: NavController) {
         }
     }
 
-    // Auto-focus To input when From is confirmed and To is empty (D-04)
-    LaunchedEffect(fromConfirmed) {
-        if (fromConfirmed.isNotEmpty() && toConfirmed.isBlank()) {
-            try { toFocusRequester.requestFocus() } catch (_: Exception) { /* not yet attached */ }
-        }
-    }
-
     // Derive current path from uiState (used by both BottomSheet and Show Path button)
     val path = when (val s = uiState) {
         is BridgeUiState.PathFound -> s.path
@@ -353,14 +348,29 @@ fun BridgeScreen(navController: NavController) {
     }
     val nowPlayingIndex = (uiState as? BridgeUiState.PlaylistReady)?.nowPlayingIndex ?: -1
 
-    // Chip fill logic — D-01: fills From first, then To (progressive disclosure, no focus tracking)
+    // Chip fill logic — D-01 priority rules (fills empty or focused input first)
     val onSeedChipClick: (String) -> Unit = { artistName ->
-        if (fromConfirmed.isBlank()) {
-            viewModel.onFromQueryChanged(artistName)
-            viewModel.confirmFrom()
-        } else {
-            viewModel.onToQueryChanged(artistName)
-            viewModel.confirmTo()  // auto-triggers findBridge via D-05
+        when {
+            fromConfirmed.isBlank() -> {
+                viewModel.onFromQueryChanged(artistName)
+                viewModel.confirmFrom()
+            }
+            toConfirmed.isBlank() -> {
+                viewModel.onToQueryChanged(artistName)
+                viewModel.confirmTo()
+            }
+            fromHasFocus -> {
+                viewModel.onFromQueryChanged(artistName)
+                viewModel.confirmFrom()
+            }
+            toHasFocus -> {
+                viewModel.onToQueryChanged(artistName)
+                viewModel.confirmTo()
+            }
+            else -> {  // both filled, neither focused — fallback to From
+                viewModel.onFromQueryChanged(artistName)
+                viewModel.confirmFrom()
+            }
         }
     }
 
@@ -408,9 +418,6 @@ fun BridgeScreen(navController: NavController) {
             }
         }
 
-        val colorScheme = MaterialTheme.colorScheme
-        val typography = MaterialTheme.typography
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -419,179 +426,134 @@ fun BridgeScreen(navController: NavController) {
         ) {
             Spacer(Modifier.height(48.dp))
 
-            // AnimatedContent crossfades between input disclosure state and searching state (D-06, D-08)
-            AnimatedContent(
-                targetState = uiState is BridgeUiState.Searching,
-                transitionSpec = {
-                    fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
+            // Input section — two side-by-side fields (D-03)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                GhostTextField(
+                    value = fromQuery,
+                    ghostSuffix = fromGhostSuffix,
+                    onValueChange = { viewModel.onFromQueryChanged(it) },
+                    onConfirm = { viewModel.confirmFrom() },
+                    placeholder = stringResource(R.string.bridge_from_placeholder),
+                    label = stringResource(R.string.bridge_from_label),
+                    enabled = !isSearching,
+                    onFocusChanged = { focused ->
+                        fromHasFocus = focused
+                        if (!focused) viewModel.confirmFrom()
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+                GhostTextField(
+                    value = toQuery,
+                    ghostSuffix = toGhostSuffix,
+                    onValueChange = { viewModel.onToQueryChanged(it) },
+                    onConfirm = { viewModel.confirmTo() },
+                    placeholder = stringResource(R.string.bridge_to_placeholder),
+                    label = stringResource(R.string.bridge_to_label),
+                    enabled = !isSearching,
+                    onFocusChanged = { focused ->
+                        toHasFocus = focused
+                        if (!focused) viewModel.confirmTo()
+                    },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // Seed suggestion chips row (SPOT-01) — between inputs and Find Bridge button
+            SeedSuggestionsRow(
+                suggestions = seedSuggestions,
+                isLoading = isLoadingSeeds,
+                onChipClick = onSeedChipClick,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            // Find Bridge button (D-09: disabled when running or inputs empty)
+            // Enable based on query text (not confirmed) — onClick confirms before bridging
+            Button(
+                onClick = {
+                    viewModel.confirmFrom()
+                    viewModel.confirmTo()
+                    viewModel.findBridge()
                 },
-                label = "bridge_input_state",
-            ) { isSearchingAnim ->
-                if (isSearchingAnim) {
-                    // Searching state — progress indicator centre stage (BRDG-04)
-                    val state = uiState as? BridgeUiState.Searching ?: BridgeUiState.Searching()
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 24.dp),
-                    ) {
-                        if (state.progress in 0f..1f) {
-                            LinearProgressIndicator(
-                                progress = { state.progress },
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        } else {
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            text = state.message.ifBlank { stringResource(R.string.bridge_searching_hint) },
-                            style = typography.bodyLarge,
-                            textAlign = TextAlign.Center,
-                        )
-                        if (state.totalHops > 0) {
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                text = stringResource(
-                                    R.string.bridge_progress_hops,
-                                    state.foundHops,
-                                    state.totalHops
-                                ),
-                                style = typography.bodySmall,
-                                color = colorScheme.onSurface.copy(alpha = 0.6f),
-                                textAlign = TextAlign.Center,
-                            )
-                        }
-                    }
-                } else {
-                    // Input disclosure state — progressive disclosure (D-03)
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        // "From" section: search input or confirmed artist chip
-                        if (fromConfirmed.isBlank()) {
-                            Text(
-                                text = stringResource(R.string.bridge_from_label),
-                                style = typography.labelLarge,
-                                color = colorScheme.onSurfaceVariant,
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            ArtistSearchInput(
-                                query = fromQuery,
-                                suggestions = fromSuggestions,
-                                onQueryChange = { viewModel.onFromQueryChanged(it) },
-                                onSuggestionSelected = { name ->
-                                    viewModel.onFromQueryChanged(name)
-                                    viewModel.confirmFrom()
-                                },
-                                placeholder = stringResource(R.string.bridge_from_placeholder),
-                                enabled = !isSearching,
-                            )
-                        } else {
-                            AssistChip(
-                                onClick = { viewModel.clearFrom() },
-                                label = {
-                                    Text(
-                                        fromConfirmed,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                },
-                                trailingIcon = {
-                                    Icon(
-                                        painter = painterResource(R.drawable.close),
-                                        contentDescription = stringResource(R.string.bridge_clear_from_description),
-                                        modifier = Modifier.size(AssistChipDefaults.IconSize),
-                                    )
-                                },
-                            )
-                        }
-
-                        Spacer(Modifier.height(8.dp))
-
-                        // Seed suggestion chips — below From input (D-09)
-                        SeedSuggestionsRow(
-                            suggestions = seedSuggestions,
-                            isLoading = isLoadingSeeds,
-                            onChipClick = onSeedChipClick,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-
-                        // "To" section — animated reveal after From confirmed (D-03)
-                        AnimatedVisibility(
-                            visible = fromConfirmed.isNotEmpty(),
-                            enter = expandVertically(animationSpec = spring()) + fadeIn(),
-                            exit = shrinkVertically() + fadeOut(),
-                        ) {
-                            Column {
-                                Spacer(Modifier.height(8.dp))
-                                if (toConfirmed.isBlank()) {
-                                    Text(
-                                        text = stringResource(R.string.bridge_to_label),
-                                        style = typography.labelLarge,
-                                        color = colorScheme.onSurfaceVariant,
-                                    )
-                                    Spacer(Modifier.height(4.dp))
-                                    ArtistSearchInput(
-                                        query = toQuery,
-                                        suggestions = toSuggestions,
-                                        onQueryChange = { viewModel.onToQueryChanged(it) },
-                                        onSuggestionSelected = { name ->
-                                            viewModel.onToQueryChanged(name)
-                                            viewModel.confirmTo()  // auto-triggers bridge per D-05
-                                        },
-                                        placeholder = stringResource(R.string.bridge_to_placeholder),
-                                        enabled = !isSearching,
-                                        modifier = Modifier.focusRequester(toFocusRequester),
-                                    )
-                                } else {
-                                    AssistChip(
-                                        onClick = { viewModel.clearTo() },
-                                        label = {
-                                            Text(
-                                                toConfirmed,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                            )
-                                        },
-                                        trailingIcon = {
-                                            Icon(
-                                                painter = painterResource(R.drawable.close),
-                                                contentDescription = stringResource(R.string.bridge_clear_to_description),
-                                                modifier = Modifier.size(AssistChipDefaults.IconSize),
-                                            )
-                                        },
-                                    )
-                                }
-                            }
-                        }
-
-                        // Idle hint text — only when no artists confirmed
-                        if (fromConfirmed.isBlank()) {
-                            Spacer(Modifier.height(16.dp))
-                            Text(
-                                text = stringResource(R.string.bridge_idle_hint),
-                                style = typography.bodyLarge,
-                                color = colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = 8.dp),
-                            )
-                        }
-                    }
+                enabled = fromQuery.isNotBlank() && toQuery.isNotBlank() && !isSearching,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .height(48.dp),
+            ) {
+                if (isSearching) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                    )
+                    Spacer(Modifier.width(8.dp))
                 }
+                Text(stringResource(R.string.bridge_find_button))
             }
 
             Spacer(Modifier.height(16.dp))
 
-            // State-driven content section — PathFound, PlaylistReady, Error only
-            // (Idle and Searching are handled by AnimatedContent above)
+            // State-driven content section
             when (val state = uiState) {
+                is BridgeUiState.Idle -> {
+                    Text(
+                        text = stringResource(R.string.bridge_idle_hint),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                    )
+                }
+                is BridgeUiState.Searching -> {
+                    // Progress bar — determinate when progress known, indeterminate otherwise
+                    if (state.progress in 0f..1f) {
+                        LinearProgressIndicator(
+                            progress = { state.progress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp),
+                        )
+                    } else {
+                        LinearProgressIndicator(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 24.dp),
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    // Real progress message from EccoPath (e.g., "Analyzing Radiohead and Björk...", "Searching from Radiohead...")
+                    Text(
+                        text = state.message.ifBlank { stringResource(R.string.bridge_searching_hint) },
+                        style = MaterialTheme.typography.bodyLarge,
+                        textAlign = TextAlign.Center,
+                    )
+                    // Hop count (only when totalHops known)
+                    if (state.totalHops > 0) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(
+                                R.string.bridge_progress_hops,
+                                state.foundHops,
+                                state.totalHops
+                            ),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
                 is BridgeUiState.PathFound -> {
                     if (isBuilding) {
+                        // Show building progress while tracks are being resolved
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier.padding(horizontal = 24.dp),
@@ -600,29 +562,30 @@ fun BridgeScreen(navController: NavController) {
                             Spacer(Modifier.height(8.dp))
                             Text(
                                 text = stringResource(R.string.bridge_building_playlist),
-                                style = typography.bodyLarge,
+                                style = MaterialTheme.typography.bodyLarge,
                                 textAlign = TextAlign.Center,
                             )
                         }
                     } else if (buildFailed) {
+                        // All tracks failed to resolve — show informative message
                         Text(
                             text = stringResource(R.string.bridge_no_tracks_found),
-                            style = typography.bodyMedium,
-                            color = colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center,
                             modifier = Modifier.padding(horizontal = 24.dp),
                         )
                     } else {
                         Text(
                             text = stringResource(R.string.bridge_path_found_hint),
-                            style = typography.bodyMedium,
+                            style = MaterialTheme.typography.bodyMedium,
                         )
                     }
                 }
                 is BridgeUiState.PlaylistReady -> {
                     Text(
                         text = stringResource(R.string.bridge_playlist_ready_hint),
-                        style = typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyMedium,
                     )
                 }
                 is BridgeUiState.Error -> {
@@ -636,26 +599,25 @@ fun BridgeScreen(navController: NavController) {
                         Icon(
                             painter = painterResource(R.drawable.error),
                             contentDescription = null,
-                            tint = colorScheme.error,
+                            tint = MaterialTheme.colorScheme.error,
                             modifier = Modifier.size(20.dp),
                         )
                         Spacer(Modifier.height(8.dp))
                         Text(
                             text = state.message,
-                            color = colorScheme.error,
-                            style = typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium,
                             textAlign = TextAlign.Center,
                         )
                         Spacer(Modifier.height(8.dp))
                         Text(
                             text = stringResource(R.string.bridge_error_suggestion),
-                            color = colorScheme.onSurface.copy(alpha = 0.6f),
-                            style = typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                            style = MaterialTheme.typography.bodyMedium,
                             textAlign = TextAlign.Center,
                         )
                     }
                 }
-                else -> Unit
             }
 
             // Show Path button — visible when a path exists but the sheet is dismissed
@@ -679,7 +641,7 @@ fun BridgeScreen(navController: NavController) {
                             .fillMaxWidth()
                             .height(pathSheetState.collapsedBound)
                             .background(
-                                colorScheme.surfaceContainer,
+                                MaterialTheme.colorScheme.surfaceContainer,
                                 RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
                             )
                             .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -690,15 +652,15 @@ fun BridgeScreen(navController: NavController) {
                                 .width(32.dp)
                                 .height(4.dp)
                                 .background(
-                                    colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
                                     RoundedCornerShape(2.dp),
                                 ),
                         )
                         Spacer(Modifier.height(8.dp))
                         Text(
                             text = path?.joinToString(" → ") ?: "",
-                            style = typography.bodyMedium,
-                            color = colorScheme.onSurface,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 2,
                             textAlign = TextAlign.Center,
                         )
@@ -710,7 +672,7 @@ fun BridgeScreen(navController: NavController) {
                     artistMetadata = artistMetadata,
                     nowPlayingIndex = nowPlayingIndex,
                     familiarityMap = artistFamiliarity,
-                    modifier = Modifier.background(colorScheme.surfaceContainer),
+                    modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainer),
                 )
             }
         }

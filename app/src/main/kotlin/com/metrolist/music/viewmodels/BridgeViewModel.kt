@@ -133,11 +133,15 @@ class BridgeViewModel @Inject constructor(
     private val _toQuery = MutableStateFlow("")
     val toQuery: StateFlow<String> = _toQuery.asStateFlow()
 
-    private val _fromSuggestions = MutableStateFlow<List<String>>(emptyList())
-    val fromSuggestions: StateFlow<List<String>> = _fromSuggestions.asStateFlow()
+    private val _fromGhostSuffix = MutableStateFlow("")
+    val fromGhostSuffix: StateFlow<String> = _fromGhostSuffix.asStateFlow()
 
-    private val _toSuggestions = MutableStateFlow<List<String>>(emptyList())
-    val toSuggestions: StateFlow<List<String>> = _toSuggestions.asStateFlow()
+    private val _toGhostSuffix = MutableStateFlow("")
+    val toGhostSuffix: StateFlow<String> = _toGhostSuffix.asStateFlow()
+
+    // Full suggestion name when ghost is showing (for confirm action)
+    private var _fromGhostFull = ""
+    private var _toGhostFull = ""
 
     // Confirmed artist names passed to startBridge()
     private val _fromConfirmedArtist = MutableStateFlow("")
@@ -489,7 +493,7 @@ class BridgeViewModel @Inject constructor(
 
     /**
      * Called on every keystroke in the "From" input. Debounces 300ms before
-     * querying LastFM.searchArtists() for suggestion list autocomplete (D-01, D-02).
+     * querying LastFM.searchArtists() for ghost-text autocomplete (D-02).
      * Clears confirmed artist when user edits (prevents stale confirmed name).
      */
     fun onFromQueryChanged(query: String) {
@@ -497,17 +501,26 @@ class BridgeViewModel @Inject constructor(
         _fromConfirmedArtist.value = ""
         fromSearchJob?.cancel()
         if (query.isBlank()) {
-            _fromSuggestions.value = emptyList()
+            _fromGhostSuffix.value = ""
+            _fromGhostFull = ""
             return
         }
         fromSearchJob = viewModelScope.launch(Dispatchers.IO) {
             delay(300L)
-            LastFM.searchArtists(query, 5)
+            LastFM.searchArtists(query, 1)
                 .onSuccess { response ->
-                    _fromSuggestions.value = response.results.artistmatches.artist.map { it.name }
+                    val suggestion = response.results.artistmatches.artist.firstOrNull()?.name ?: ""
+                    if (suggestion.startsWith(query, ignoreCase = true)) {
+                        _fromGhostSuffix.value = suggestion.drop(query.length)
+                        _fromGhostFull = suggestion
+                    } else {
+                        _fromGhostSuffix.value = ""
+                        _fromGhostFull = ""
+                    }
                 }
                 .onFailure {
-                    _fromSuggestions.value = emptyList()
+                    _fromGhostSuffix.value = ""
+                    _fromGhostFull = ""
                 }
         }
     }
@@ -520,76 +533,78 @@ class BridgeViewModel @Inject constructor(
         _toConfirmedArtist.value = ""
         toSearchJob?.cancel()
         if (query.isBlank()) {
-            _toSuggestions.value = emptyList()
+            _toGhostSuffix.value = ""
+            _toGhostFull = ""
             return
         }
         toSearchJob = viewModelScope.launch(Dispatchers.IO) {
             delay(300L)
-            LastFM.searchArtists(query, 5)
+            LastFM.searchArtists(query, 1)
                 .onSuccess { response ->
-                    _toSuggestions.value = response.results.artistmatches.artist.map { it.name }
+                    val suggestion = response.results.artistmatches.artist.firstOrNull()?.name ?: ""
+                    if (suggestion.startsWith(query, ignoreCase = true)) {
+                        _toGhostSuffix.value = suggestion.drop(query.length)
+                        _toGhostFull = suggestion
+                    } else {
+                        _toGhostSuffix.value = ""
+                        _toGhostFull = ""
+                    }
                 }
                 .onFailure {
-                    _toSuggestions.value = emptyList()
+                    _toGhostSuffix.value = ""
+                    _toGhostFull = ""
                 }
         }
     }
 
     /**
-     * Confirm the current "From" query as the selected artist (D-05).
-     * Clears suggestions and cancels pending search. Does NOT auto-trigger findBridge.
+     * Confirm the "From" ghost suggestion — fills input with full artist name (D-05).
+     * If ghost is stale (doesn't match current input), falls back to raw input.
      */
     fun confirmFrom() {
-        _fromConfirmedArtist.value = _fromQuery.value
-        _fromSuggestions.value = emptyList()
+        val current = _fromQuery.value
+        val full = _fromGhostFull
+        if (full.isNotEmpty() && full.startsWith(current, ignoreCase = true)) {
+            _fromQuery.value = full
+            _fromConfirmedArtist.value = full
+        } else {
+            _fromConfirmedArtist.value = current
+        }
+        _fromGhostSuffix.value = ""
+        _fromGhostFull = ""
         fromSearchJob?.cancel()
     }
 
     /**
-     * Confirm the current "To" query as the selected artist (D-05).
-     * Clears suggestions and cancels pending search.
-     * Auto-triggers findBridge() when both artists are confirmed (D-05).
+     * Confirm the "To" ghost suggestion — same pattern as confirmFrom().
      */
     fun confirmTo() {
-        _toConfirmedArtist.value = _toQuery.value
-        _toSuggestions.value = emptyList()
-        toSearchJob?.cancel()
-        if (_fromConfirmedArtist.value.isNotBlank() && _toConfirmedArtist.value.isNotBlank()) {
-            findBridge()
+        val current = _toQuery.value
+        val full = _toGhostFull
+        if (full.isNotEmpty() && full.startsWith(current, ignoreCase = true)) {
+            _toQuery.value = full
+            _toConfirmedArtist.value = full
+        } else {
+            _toConfirmedArtist.value = current
         }
-    }
-
-    /**
-     * Reset "From" artist state — clears query, confirmed artist, and suggestions (D-03 chip dismissal).
-     */
-    fun clearFrom() {
-        _fromQuery.value = ""
-        _fromConfirmedArtist.value = ""
-        _fromSuggestions.value = emptyList()
-        fromSearchJob?.cancel()
-    }
-
-    /**
-     * Reset "To" artist state — clears query, confirmed artist, and suggestions (D-03 chip dismissal).
-     */
-    fun clearTo() {
-        _toQuery.value = ""
-        _toConfirmedArtist.value = ""
-        _toSuggestions.value = emptyList()
+        _toGhostSuffix.value = ""
+        _toGhostFull = ""
         toSearchJob?.cancel()
     }
 
     /**
      * Trigger bridge search using confirmed artist names. Cancels any pending autocomplete.
-     * Called by auto-trigger in confirmTo() (D-05) or directly when both artists are confirmed.
+     * Called by "Find Bridge" button (D-09 — button only enabled when both confirmed and not running).
      */
     fun findBridge() {
         val from = _fromConfirmedArtist.value
         val to = _toConfirmedArtist.value
         if (from.isBlank() || to.isBlank()) return
-        // Cancel pending autocomplete to avoid stale suggestions during search
+        // Cancel pending autocomplete to avoid stale ghost during search
         fromSearchJob?.cancel()
         toSearchJob?.cancel()
+        _fromGhostSuffix.value = ""
+        _toGhostSuffix.value = ""
         startBridge(from, to)
     }
 }

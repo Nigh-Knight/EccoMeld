@@ -37,34 +37,22 @@ Discover music you didn't know you wanted through meaningful, human-like genre b
 
 ### Active
 
-<!-- New bridge discovery features — P0 MVP scope -->
+<!-- v2.0 features -->
 
-- [x] Bridge tab in bottom navigation with state model — Validated in Phase 2
-- [ ] Bridge tab artist search inputs (From/To artist)
-- [x] Native Kotlin bridge algorithm — bidirectional beam search with Room DB caching, replaces WebView path — Validated in Phase 8
-- [x] JS bridge interface — MeldBridge.createPlaylist(json) sends bridge path to Kotlin — Validated in Phase 3 (superseded by native Kotlin in Phase 8)
-- [ ] Linear path result view — seed at top, target at bottom, bridge artists between with genre tags and listener counts
-- [ ] Unified playlist builder — 2 popular + 3-5 deep cuts per bridge artist, genre-transition order
-- [ ] Auto-play on bridge completion — playlist feeds into existing Meld queue/player
-- [ ] YT Music track matching — fuzzy match artist+track to YT Music video IDs for each bridge artist's tracks
-- [ ] Random Bridge button — picks two genre-opposite artists from Spotify liked songs via Tag Jaccard distance
-- [ ] Spotify liked artists as seed suggestions — "Bridge from your taste"
-- [ ] Silent skip on YT Music match failures — don't break playlist flow for unavailable tracks
+- [ ] Walk & Listen mode — ambient auto-discovery through bridges
+- [ ] Bridge History — persistent saved bridges with replay
+- [ ] Bridge Radio — expanded playlists beyond the target artist
+- [ ] Track resolution improvements — reduce "no tracks found" rate
 
 ### Out of Scope
 
-- Staging cards / path walker UI — P1, deferred to next milestone
-- Graph queue with destinations — P1, deferred
-- Unknown artist priority scoring — P1, deferred
-- Bridge radio (expanded playlist) — P1, deferred
-- Bridge history / replay — P1, deferred
-- Walk & Listen mode — P2, deferred
-- Daily Bridge notifications — P2, deferred
-- Taste drift analytics — P2, deferred
-- Native Kotlin port of bridge algorithm — completed in Phase 8 (moved to Active/Validated)
-- Removing or modifying existing Meld features — not in scope, everything stays
-- Package renaming (com.metrolist.music) — deferred, keep existing for now
-- Google Play distribution — YT Music stream extraction would be rejected
+- Graph queue with destinations — deferred
+- Unknown artist priority scoring — deferred
+- Daily Bridge notifications — deferred
+- Taste drift analytics — deferred
+- Removing or modifying existing Meld features — not in scope
+- Package renaming (com.metrolist.music) — deferred
+- Google Play distribution — YT Music stream extraction incompatible with Play policies
 
 ## Context
 
@@ -102,29 +90,31 @@ Discover music you didn't know you wanted through meaningful, human-like genre b
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Keep all existing Meld features | Bridge is additive, not a replacement — full music client stays intact | — Pending |
-| WebView for bridge algorithm (MVP) | Ship fast, validate product, port to Kotlin later (~200 lines TS) | Validated Phase 1 |
-| Bundle EccoPath as git submodule | Offline-capable, no server dependency, reproducible builds | Validated Phase 1 |
-| P0 MVP first, P1 in next milestone | Validate bridge concept before building staging/graph/history | — Pending |
-| GitHub releases only | YT Music stream extraction incompatible with Google Play policies | — Pending |
-| Keep com.metrolist.music package | Minimize diff with upstream, rename later if needed | — Pending |
+| Keep all existing Meld features | Bridge is additive, not a replacement — full music client stays intact | ✓ Good — all Meld features intact |
+| WebView for bridge algorithm (MVP) | Ship fast, validate product, port to Kotlin later (~200 lines TS) | ✓ Validated Phase 1, superseded by native Kotlin in Phase 8 |
+| Bundle EccoPath as git submodule | Offline-capable, no server dependency, reproducible builds | ✓ Good — works offline, but WebView now dormant |
+| Native Kotlin bridge algorithm | WebView cold cache was too slow; native Kotlin with Room DB caching | ✓ Good — 5-10x faster, no WebView dependency |
+| Progressive streaming | Auto-play first artist's tracks immediately, append rest as resolved | ✓ Good — music within seconds of path found |
+| Stacked bridge cards | Multiple bridges as collapsible cards instead of single result | ✓ Good — enables bridge chaining |
+| P0 MVP first, P1 in next milestone | Validate bridge concept before building staging/graph/history | ✓ Validated — bridge concept works |
+| GitHub releases only | YT Music stream extraction incompatible with Google Play policies | — Ongoing |
+| Keep com.metrolist.music package | Minimize diff with upstream, rename later if needed | — Deferred |
 
-## Evolution
+## Current State (v1.0 shipped 2026-04-05)
 
-This document evolves at phase transitions and milestone boundaries.
+- 9 phases, 22 plans, 21 requirements — all complete
+- Native Kotlin bidirectional beam search with Room DB two-level cache
+- Progressive playlist streaming with auto-play
+- Stacked collapsible bridge cards with replay
+- Collab artist splitting, video fallback, Unicode track matching
+- 42 files changed, ~6,300 lines added
 
-**After each phase transition** (via `/gsd:transition`):
-1. Requirements invalidated? → Move to Out of Scope with reason
-2. Requirements validated? → Move to Validated with phase reference
-3. New requirements emerged? → Add to Active
-4. Decisions to log? → Add to Key Decisions
-5. "What This Is" still accurate? → Update if drifted
+## Next Milestone Goals
 
-**After each milestone** (via `/gsd:complete-milestone`):
-1. Full review of all sections
-2. Core Value check — still the right priority?
-3. Audit Out of Scope — reasons still valid?
-4. Update Context with current state
+- Walk & Listen mode — ambient auto-discovery
+- Bridge History — persistent saved bridges
+- Bridge Radio — expanded playlists beyond the target
+- Track resolution improvements — reduce "no tracks found" rate
 
 ---
-*Last updated: 2026-04-05 after Phase 8 completion — Native Kotlin Bridge Algorithm*
+*Last updated: 2026-04-05 after v1.0 milestone completion*
