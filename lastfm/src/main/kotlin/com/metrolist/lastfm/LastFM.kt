@@ -3,6 +3,7 @@ package com.metrolist.lastfm
 import com.metrolist.lastfm.models.ArtistInfoResponse
 import com.metrolist.lastfm.models.ArtistSearchResponse
 import com.metrolist.lastfm.models.ArtistTopTracksResponse
+import com.metrolist.lastfm.models.SimilarArtistsResponse
 import com.metrolist.lastfm.models.Authentication
 import com.metrolist.lastfm.models.LastFmError
 import com.metrolist.lastfm.models.TokenResponse
@@ -200,6 +201,26 @@ object LastFM {
                 parameter("api_key", API_KEY)
                 parameter("format", "json")
             }.body<ArtistTopTracksResponse>()
+        }
+    }
+
+    /**
+     * Fetch similar artists for a given artist. Unauthenticated GET — no API signature needed.
+     * Used by KotlinBridgeCache for beam-search expansion in the native bridge algorithm (Phase 8).
+     *
+     * @param artist Artist name
+     * @param limit Max similar artists to return (default 100)
+     */
+    suspend fun getSimilarArtists(artist: String, limit: Int = 100): Result<SimilarArtistsResponse> {
+        if (API_KEY.isEmpty()) return Result.failure(IllegalStateException("LastFM not initialized"))
+        return runCatching {
+            client.get("https://ws.audioscrobbler.com/2.0/") {
+                parameter("method", "artist.getSimilar")
+                parameter("artist", artist)
+                parameter("limit", limit.toString())
+                parameter("api_key", API_KEY)
+                parameter("format", "json")
+            }.body<SimilarArtistsResponse>()
         }
     }
 

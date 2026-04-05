@@ -25,6 +25,8 @@ import com.metrolist.music.db.daos.SpeedDialDao
 import com.metrolist.music.db.entities.AlbumArtistMap
 import com.metrolist.music.db.entities.AlbumEntity
 import com.metrolist.music.db.entities.ArtistEntity
+import com.metrolist.music.db.entities.BridgeArtistMetaEntity
+import com.metrolist.music.db.entities.BridgeSimilarArtistEntity
 import com.metrolist.music.db.entities.Event
 import com.metrolist.music.db.entities.FormatEntity
 import com.metrolist.music.db.entities.LyricsEntity
@@ -110,14 +112,16 @@ class MusicDatabase(
         RecognitionHistory::class,
         SpeedDialItem::class,
         PodcastEntity::class,
-        SpotifyMatchEntity::class
+        SpotifyMatchEntity::class,
+        BridgeSimilarArtistEntity::class,
+        BridgeArtistMetaEntity::class
     ],
     views = [
         SortedSongArtistMap::class,
         SortedSongAlbumMap::class,
         PlaylistSongMapPreview::class,
     ],
-    version = 36,
+    version = 37,
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 2, to = 3),
@@ -154,6 +158,7 @@ class MusicDatabase(
         AutoMigration(from = 33, to = 34),
         AutoMigration(from = 34, to = 35),
         AutoMigration(from = 35, to = 36),
+        AutoMigration(from = 36, to = 37),
     ],
 )
 @TypeConverters(Converters::class)
