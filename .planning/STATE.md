@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 09-bridge-ui-redesign 09-01-PLAN.md
-last_updated: "2026-04-05T06:24:51.094Z"
+status: verifying
+stopped_at: Completed 09-bridge-ui-redesign 09-02-PLAN.md
+last_updated: "2026-04-05T06:31:26.885Z"
 last_activity: 2026-04-05
 progress:
   total_phases: 9
-  completed_phases: 8
+  completed_phases: 9
   total_plans: 22
-  completed_plans: 21
+  completed_plans: 22
   percent: 100
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 
 Phase: 09 (bridge-ui-redesign) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-04-05
 
 Progress: [████████████████████] 4/4 plans (100%)
@@ -73,6 +73,7 @@ Progress: [████████████████████] 4/4 pla
 | Phase 08-native-kotlin-bridge-algorithm P02 | 4min | 1 tasks | 2 files |
 | Phase 08-native-kotlin-bridge-algorithm P03 | 15min | 2 tasks | 3 files |
 | Phase 09-bridge-ui-redesign P01 | 11min | 1 tasks | 3 files |
+| Phase 09-bridge-ui-redesign P02 | 4min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -128,6 +129,9 @@ Recent decisions affecting current work:
 - [Phase 09-bridge-ui-redesign]: Ghost suffix replaced by suggestion list StateFlow<List<String>> — 5 results from LastFM.searchArtists (D-01)
 - [Phase 09-bridge-ui-redesign]: confirmTo() auto-triggers findBridge() when both confirmed — confirmFrom() does not (per Research Pitfall 3)
 - [Phase 09-bridge-ui-redesign]: Test strategy: reflection injection for suggestion StateFlow tests — Kotlin object singletons cannot be mocked with Mockito whenever for suspend functions
+- [Phase 09-bridge-ui-redesign]: GhostTextField fully removed — progressive disclosure replaces side-by-side ghost text layout
+- [Phase 09-bridge-ui-redesign]: ArtistSearchInput uses onGloballyPositioned width-match for DropdownMenu (Research Pitfall 1)
+- [Phase 09-bridge-ui-redesign]: AnimatedContent wraps input and searching states for crossfade; onSeedChipClick simplified to 2 branches
 
 ### Pending Todos
 
@@ -140,6 +144,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-05T06:24:51.090Z
-Stopped at: Completed 09-bridge-ui-redesign 09-01-PLAN.md
+Last session: 2026-04-05T06:31:19.354Z
+Stopped at: Completed 09-bridge-ui-redesign 09-02-PLAN.md
 Resume file: None
