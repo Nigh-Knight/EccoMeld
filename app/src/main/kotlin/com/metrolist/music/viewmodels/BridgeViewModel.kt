@@ -5,13 +5,12 @@
 
 package com.metrolist.music.viewmodels
 
-import android.os.Handler
-import android.os.Looper
 import android.webkit.WebView
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import com.metrolist.lastfm.LastFM
+import com.metrolist.music.bridge.BridgeAlgorithm
 import com.metrolist.music.bridge.MeldBridgeInterface
 import com.metrolist.music.db.MusicDatabase
 import com.metrolist.music.di.BridgeWebView
@@ -32,7 +31,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -71,6 +69,7 @@ class BridgeViewModel @Inject constructor(
     private val meldBridgeInterface: MeldBridgeInterface,
     private val playlistBuilder: BridgePlaylistBuilder,
     private val database: MusicDatabase,
+    private val bridgeAlgorithm: BridgeAlgorithm,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<BridgeUiState>(BridgeUiState.Idle)
@@ -156,28 +155,6 @@ class BridgeViewModel @Inject constructor(
     private var toSearchJob: Job? = null
 
     /**
-     * Handler for posting WebView calls to the main thread.
-     * Lazy so Looper.getMainLooper() is only accessed at first call (not during construction),
-     * enabling JVM unit tests to construct BridgeViewModel without Android mocks.
-     */
-    internal val mainHandler: Handler by lazy { Handler(Looper.getMainLooper()) }
-
-    init {
-        // Wire MeldBridgeInterface callbacks to update _uiState.
-        // onStateChange is a mutable var property (not constructor param) — assigned post-construction
-        // because Hilt creates the singleton MeldBridgeInterface before this ViewModel exists.
-        // Intercept PathFound to automatically trigger playlist building (PLAY-01).
-        meldBridgeInterface.onStateChange = { newState ->
-            _uiState.value = newState
-            if (newState is BridgeUiState.PathFound) {
-                viewModelScope.launch { buildPlaylist(newState.path) }
-                viewModelScope.launch(Dispatchers.IO) { fetchArtistMetadata(newState.path) }
-                viewModelScope.launch(Dispatchers.IO) { resolveFamiliarity(newState.path) }
-            }
-        }
-    }
-
-    /**
      * Builds a playlist from the resolved bridge path. Called automatically on PathFound.
      * Shows queue dialog when tracks are ready (D-06). Sets buildFailed if no tracks resolve.
      */
@@ -239,11 +216,12 @@ class BridgeViewModel @Inject constructor(
     }
 
     /**
-     * Kick off a bridge search from [startArtist] to [endArtist].
+     * Kick off a bridge search from [startArtist] to [endArtist] using the native Kotlin algorithm.
      *
      * Rejects the request if a bridge is already running (D-08 concurrency guard).
-     * Artist names are escaped via JSONObject.quote() before injection into JS (Research Pitfall 5).
-     * evaluateJavascript must be called on the main thread (Research Pitfall 4).
+     * Calls [BridgeAlgorithm.findBridge] directly — no WebView or evaluateJavascript involved.
+     * Progress updates flow into [BridgeUiState.Searching]. On success, triggers playlist building,
+     * metadata fetch, and familiarity resolution automatically (PLAY-01).
      */
     fun startBridge(startArtist: String, endArtist: String) {
         if (isRunning) {
@@ -251,16 +229,27 @@ class BridgeViewModel @Inject constructor(
             return
         }
         _uiState.value = BridgeUiState.Searching()
-        Timber.tag("MeldBridge").d("Starting bridge: %s -> %s", startArtist, endArtist)
+        Timber.tag("MeldBridge").d("Starting native bridge: %s -> %s", startArtist, endArtist)
 
-        // JSONObject.quote() returns the value surrounded by double-quotes, safe for any artist name
-        val escapedStart = JSONObject.quote(startArtist)
-        val escapedEnd = JSONObject.quote(endArtist)
-        val script = "window.startBridge($escapedStart, $escapedEnd)"
-
-        // evaluateJavascript must run on main thread per Research Pitfall 4
-        mainHandler.post {
-            webView.evaluateJavascript(script, null)
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = bridgeAlgorithm.findBridge(startArtist, endArtist) { progress ->
+                _uiState.value = BridgeUiState.Searching(
+                    message = progress.message,
+                    progress = progress.progress,
+                    foundHops = progress.depth,
+                    totalHops = progress.maxDepth,
+                )
+            }
+            withContext(Dispatchers.Main) {
+                if (result.found) {
+                    _uiState.value = BridgeUiState.PathFound(result.path)
+                    viewModelScope.launch { buildPlaylist(result.path) }
+                    viewModelScope.launch(Dispatchers.IO) { fetchArtistMetadata(result.path) }
+                    viewModelScope.launch(Dispatchers.IO) { resolveFamiliarity(result.path) }
+                } else {
+                    _uiState.value = BridgeUiState.Error("No bridge path found. Try different artists.")
+                }
+            }
         }
     }
 
