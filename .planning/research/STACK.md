@@ -1,343 +1,305 @@
-# Technology Stack — EccoMeld Bridge Discovery Milestone
+# Technology Stack — EccoMeld Path Walker & Hyperbolic Graph Milestone
 
-**Project:** EccoMeld (Bridge Discovery features atop Meld/InnerTune)
-**Researched:** 2026-04-03
-**Scope:** Additive stack for WebView ↔ Kotlin JS bridge, bundled web assets, fuzzy track matching, Tag Jaccard similarity
+**Project:** EccoMeld v2.0 Path Walker & Discovery
+**Researched:** 2026-04-05
+**Scope:** Additive stack for hyperbolic graph Canvas rendering, multi-gesture touch, node animations, and bridge/walk history persistence
 
 ---
 
 ## Existing Stack (Do Not Change)
 
-The following already exists and must not be replaced or duplicated:
+The following already exists. Do not duplicate or replace any of it.
 
 | Technology | Version | Role |
 |---|---|---|
 | Kotlin | 2.3.10 | All app code |
-| Jetpack Compose | 1.10.2 | UI framework |
+| Jetpack Compose | 1.10.2 | UI framework — includes Canvas, animation, gesture APIs |
 | Material 3 | 1.5.0-alpha09 | Design system |
 | Media3/ExoPlayer | 1.7.1 | Audio playback |
-| Room | 2.8.4 | SQLite persistence |
+| Room | 2.8.4 | SQLite persistence — already has `bridge_artist_meta` and `bridge_similar_artists` tables |
 | Hilt | 2.59.1 | Dependency injection |
-| Ktor | 3.4.0 | HTTP client |
 | kotlinx.serialization | (current) | JSON parsing |
-| Apache Commons Lang3 | 3.20.0 | String utilities (already present) |
-
-The new stack additions below are purely additive.
-
----
-
-## New Stack Additions
-
-### 1. AndroidX WebKit — JS Bridge Foundation
-
-**Add:** `androidx.webkit:webkit:1.15.0`
-
-```toml
-# gradle/libs.versions.toml
-[versions]
-webkit = "1.15.0"
-
-[libraries]
-androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
-```
-
-```kotlin
-// app/build.gradle.kts
-implementation(libs.androidx.webkit)
-```
-
-**Why webkit over raw `android.webkit.WebView`:**
-- `WebViewCompat.addWebMessageListener()` is the modern replacement for `addJavascriptInterface()`. It enforces origin-based access control — only your allowed origin can call Kotlin from JS.
-- `WebViewAssetLoader` with `AssetsPathHandler` gives the bundled web app a real HTTPS-origin (`https://appassets.androidplatform.net/`) rather than a `file://` URL. This is required for IndexedDB to work in the WebView — IndexedDB is blocked on `file://` origins in Chromium-based WebViews. EccoPath's Last.fm client uses IndexedDB as its persistent L2 cache; if the origin is `file://`, that cache is silently broken.
-- `WebViewCompat.addDocumentStartJavaScript()` injects the JS bridge object before any page script runs, eliminating the race condition where the page calls `window.MeldBridge` before Android has registered it.
-- Minimum WebView version requirement for `addWebMessageListener`: WebView 82 (released 2020). Android 8.0 (API 26, minimum SDK for this project) ships with a WebView that is system-updatable; in practice all API 26+ devices in 2025 run WebView 82+. Guard with `WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)`.
-
-**Confidence:** HIGH — verified against official Android docs and AndroidX WebKit 1.15.0 release notes.
+| compose-animation | 1.10.2 | Already in `libs.versions.toml` as `compose-animation` |
+| Last.fm module | existing | `getSimilarArtists`, `getArtistInfo` — do not re-implement |
 
 ---
 
-### 2. Bridge JS Interface Pattern
+## New Dependencies Required: Zero
 
-**No additional library required.** Use `WebViewCompat` APIs from the `webkit` dependency above.
+The hyperbolic graph visualization, gesture handling, animation, and math for this milestone are all achievable with APIs already present in the existing Compose 1.10.2 + Room 2.8.4 stack.
 
-**Recommended pattern:**
+**No new Gradle dependencies needed.**
 
-```kotlin
-// BridgeWebView.kt — set up once when the Composable is first created
-val assetLoader = WebViewAssetLoader.Builder()
-    .addPathHandler("/assets/", AssetsPathHandler(context))
-    .build()
-
-webView.webViewClient = object : WebViewClientCompat() {
-    override fun shouldInterceptRequest(
-        view: WebView,
-        request: WebResourceRequest
-    ): WebResourceResponse? = assetLoader.shouldInterceptRequest(request.url)
-}
-
-// Inject MeldBridge object before any page script runs
-if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-    WebViewCompat.addDocumentStartJavaScript(
-        webView,
-        // Expose a postMessage channel as window.MeldBridge
-        "window.MeldBridge = window.MeldBridgeInternal;",
-        setOf("https://appassets.androidplatform.net")
-    )
-}
-
-// Register message listener — receives JSON from JS
-if (WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
-    WebViewCompat.addWebMessageListener(
-        webView,
-        "MeldBridgeInternal",                          // JS sees this as window.MeldBridgeInternal
-        setOf("https://appassets.androidplatform.net"),
-        object : WebViewCompat.WebMessageListener {
-            override fun onPostMessage(
-                view: WebView,
-                message: WebMessageCompat,
-                sourceOrigin: Uri,
-                isMainFrame: Boolean,
-                replyProxy: JavaScriptReplyProxy
-            ) {
-                // Parse message.data as JSON, dispatch to ViewModel
-            }
-        }
-    )
-}
-
-webView.loadUrl("https://appassets.androidplatform.net/assets/index.html")
-```
-
-**JavaScript side (EccoPath):**
-```javascript
-// MeldBridge.createPlaylist(json) — call from EccoPath TypeScript
-window.MeldBridgeInternal.postMessage(JSON.stringify({
-    action: "createPlaylist",
-    payload: bridgeResult
-}))
-```
-
-**Do NOT use `addJavascriptInterface()`.** It exposes the bridge object to every frame including iframes, has no origin restriction, and requires `@JavascriptInterface` annotations plus ProGuard keep-rules that are easy to get wrong.
-
-**Confidence:** HIGH — official Android JS bridge documentation, verified against androidx.webkit 1.15.0 API reference.
+This is the most important finding of this research. Every third-party Android graph visualization library found (`Composable-Graphs`, `Y-Charts`, `VicoChart`) is a charting library for bar/line/pie data — none supports force-directed or hyperbolic tree layouts. They would be dead weight. The correct approach is Compose Canvas with the math ported directly from `hyperbolicLayout.ts`.
 
 ---
 
-### 3. Jetpack Compose WebView Wrapper
+## Detailed Stack Decisions Per Feature Area
 
-**Options evaluated:**
+### 1. Compose Canvas — Custom 2D Rendering
 
-| Option | Status | Verdict |
+**API:** `androidx.compose.ui:ui` (already `compose-ui` in `libs.versions.toml`)
+
+Everything needed for the Poincare disk is already available:
+
+| Operation | Compose API | Notes |
 |---|---|---|
-| Raw `AndroidView { WebView(...) }` | Always available | Use this |
-| Accompanist Web | Deprecated, unmaintained | Do NOT use |
-| `io.github.kevinnzou:compose-webview:0.33.6` | Last release March 2024, 196 stars | Viable but unnecessary |
+| Draw filled node circle | `DrawScope.drawCircle(color, radius, center, style=Fill)` | Stable |
+| Draw node stroke ring | `DrawScope.drawCircle(color, radius, center, style=Stroke(width=2f))` | Stable |
+| Draw geodesic arc | `DrawScope.drawArc(color, startAngle, sweepAngle, useCenter=false, style=Stroke)` | Stable |
+| Draw node label | `DrawScope.drawText(textMeasurer, text, topLeft, style)` | Requires `rememberTextMeasurer()` |
+| Draw radial glow/bloom | `DrawScope.drawCircle(Brush.radialGradient(colors, center, radius))` | Stable |
+| Transform/clip disk | `DrawScope.withTransform { translate(...); scale(...) }` + `clipPath` | Stable |
+| Access raw Canvas | `DrawScope.drawIntoCanvas { it.nativeCanvas }` | For `Path.arcTo()` when needed |
 
-**Recommendation: Use raw `AndroidView`.**
+**Key: Geodesic arcs** — the `computeGeodesicArc()` function in `hyperbolicLayout.ts` computes a circumscribed circle center + radius. In Compose, render this as `drawArc()` specifying the bounding box of that circle. The `startAngle`/`sweepAngle` pair from the TypeScript function maps directly to `drawArc`'s parameters. For the collinear case (null return from `computeGeodesicArc`), draw a straight line with `drawLine()`.
 
-The compose-webview library adds a thin lifecycle-state wrapper but does not expose `WebViewAssetLoader` or `addWebMessageListener` configuration — you would need to reach through to the underlying `WebView` anyway. Writing a thin `BridgeWebView` composable with `AndroidView` directly is ~50 lines and keeps the bridge wiring explicit and testable. The Accompanist library is deprecated and must not be used.
-
-```kotlin
-@Composable
-fun BridgeWebView(
-    onBridgeMessage: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val context = LocalContext.current
-    AndroidView(
-        factory = { ctx -> setupBridgeWebView(ctx, onBridgeMessage) },
-        modifier = modifier
-    )
-}
-```
-
-**Confidence:** MEDIUM — compose-webview version checked; Accompanist deprecation confirmed in official Accompanist docs.
-
----
-
-### 4. Bundled EccoPath Web Assets
-
-**Approach: Git submodule + Gradle task copies `out/` into `app/src/main/assets/eccopath/`**
-
-EccoPath is a Next.js 16.2.2 app. It already has `basePath: "/path"` and `assetPrefix: "/path"` in `next.config.ts`. These must be overridden for Android bundling. The Android build needs:
-
-```typescript
-// next.config.ts — for Android build variant
-const nextConfig: NextConfig = {
-    output: "export",      // emit static files to out/
-    basePath: "",          // no subdirectory prefix
-    assetPrefix: "",       // relative asset paths
-    trailingSlash: true,   // avoids 404s on direct asset paths
-}
-```
-
-Build flow:
-```bash
-# In EccoPath submodule directory
-next build           # generates out/ with index.html, _next/static/, public/
-
-# Copy out/ to Android assets
-cp -r out/* ../EccoMeld/app/src/main/assets/eccopath/
-```
-
-The Android `WebViewAssetLoader` with `AssetsPathHandler("/assets/")` then serves:
-- `https://appassets.androidplatform.net/assets/eccopath/index.html`
-- `https://appassets.androidplatform.net/assets/eccopath/_next/static/...`
-
-**Critical constraint — IndexedDB origin persistence:** EccoPath's `lib/lastfm.ts` uses IndexedDB as its L2 cache. IndexedDB data is keyed by origin. The origin `https://appassets.androidplatform.net` is fixed and consistent across app reinstalls on the same device, so the cache survives app updates as long as the asset loader domain does not change. Do not alter the `WebViewAssetLoader` domain.
-
-**Critical constraint — Last.fm API key:** EccoPath's `lib/lastfm.ts` hardcodes `const API_KEY = 'c02db6443f45b41cd57d8166c9f042c9'`. This key is already public in EccoPath. No changes needed — it will work from the bundled WebView. The API calls go to `https://ws.audioscrobbler.com/2.0/` directly from the WebView, not through Kotlin.
-
-**What NOT to do:**
-- Do NOT use `file:///android_asset/` URLs. IndexedDB is blocked on `file://` origins in Android WebView (Chromium security policy).
-- Do NOT use `loadDataWithBaseURL()` — this works for single HTML strings, not multi-file bundles with `_next/static/` chunks.
-- Do NOT set `webView.settings.allowFileAccessFromFileURLs = true` or `allowUniversalAccessFromFileURLs = true` — this is a security regression and still does not fix IndexedDB on `file://`.
-
-**Automate in Gradle:** Add a Gradle task in `app/build.gradle.kts` that depends on the EccoPath `npm run build` before `assembleRelease`, and copies `eccopath/out/` to `app/src/main/assets/eccopath/`. The `out/` directory should be gitignored; assets are built artifacts.
-
-**Confidence:** HIGH for WebViewAssetLoader approach; MEDIUM for Next.js config specifics (verified output structure from Next.js docs and `next.config.ts` in EccoPath, but the `assetPrefix: ""` + `output: "export"` combination for WebView specifically is a known community pattern without an official Android guide).
-
----
-
-### 5. Fuzzy String Matching — YT Music Track Matching
-
-**Recommendation: Apache Commons Text `LevenshteinDistance` (already a transitive dependency)**
-
-The project already ships `org.apache.commons:commons-lang3:3.20.0`. Apache Commons Text (the sibling library with fuzzy matching) adds `LevenshteinDistance`, `JaroWinklerSimilarity`, and `FuzzyScore`. For YT Music track matching the algorithm is:
-
-1. Normalize both strings: lowercase, strip punctuation, collapse whitespace
-2. Compute Jaro-Winkler similarity on artist name (handles spelling variants better than Levenshtein for short strings)
-3. Compute token-sort ratio on track title (handles word-order differences: "Title (feat. X)" vs "X - Title")
-4. Combine: `score = 0.4 * artistSim + 0.4 * titleSim + 0.2 * durationSim`
-5. Accept match if combined score > 0.85; skip silently if no match above threshold
-
-**Two options for the library:**
-
-**Option A: Apache Commons Text (recommended)**
-
-```toml
-# gradle/libs.versions.toml
-[versions]
-commons-text = "1.13.0"
-
-[libraries]
-apache-commons-text = { group = "org.apache.commons", name = "commons-text", version.ref = "commons-text" }
-```
-
-- Ships `LevenshteinDistance`, `JaroWinklerSimilarity`, `FuzzyScore`, `CosineSimilarity`
-- Apache 2.0 license — compatible with GPL
-- Well-maintained, Apache Foundation, no transitive dependencies
-- Familiar to the codebase since Commons Lang3 is already used
-
-**Option B: kt-fuzzy (pure Kotlin alternative)**
-
-```toml
-[versions]
-kt-fuzzy = "0.1.0"
-
-[libraries]
-kt-fuzzy = { group = "ca.solo-studios", name = "kt-fuzzy", version.ref = "kt-fuzzy" }
-```
-
-- Kotlin Multiplatform, zero dependencies
-- Includes Levenshtein, Jaro-Winkler, LCS, cosine similarity, and others
-- MIT license
-- Latest release: October 6, 2025
-- Smaller community, less battle-tested than Apache Commons
-
-**Decision: Use Apache Commons Text.** The codebase already uses Apache Commons Lang3; adding Commons Text is consistent with the existing dependency family, has a 15-year track record, and Apache 2.0 is unambiguously compatible with the project's GPL license. kt-fuzzy is a reasonable alternative only if you want to avoid Java library dependencies.
-
-**Do NOT add:**
-- `com.willowtreeapps:fuzzywuzzy-kotlin:0.1.1` — last meaningful release was 0.1.1 circa 2021, minimal maintenance since
-- `github.com/jens-muenker/fuzzywuzzy-kotlin` — Android-specific wrapper, but the underlying algorithm (just Levenshtein + ratio) is simpler than what Commons Text provides
-
-**Confidence:** HIGH for Apache Commons Text availability and license; MEDIUM for the specific scoring formula (the 0.4/0.4/0.2 weighting is a recommendation, not a verified industry standard — it should be tuned empirically against real YT Music search results).
-
----
-
-### 6. Tag Jaccard Similarity — Random Bridge Pair Selection
-
-**No new library required.** Implement directly in Kotlin.
-
-EccoPath already implements `tagJaccard()` in TypeScript (`lib/bridgeCrawl.ts`, line 36-46). The algorithm is 10 lines:
+**Text on Canvas:** Requires `rememberTextMeasurer()` from `androidx.compose.ui.text` — this is stable in Compose 1.10.2. Create it at the composable level and pass into the Canvas `DrawScope`. Artist names on nodes should use `TextMeasurer.measure()` to get `TextLayoutResult`, then center the text on the node using the result's size.
 
 ```kotlin
-// TagJaccard.kt — pure Kotlin, no dependencies
-fun tagJaccard(tagsA: Set<String>, tagsB: Set<String>): Double {
-    if (tagsA.isEmpty() || tagsB.isEmpty()) return 0.0
-    val normalizedA = tagsA.map { it.lowercase() }.toSet()
-    val normalizedB = tagsB.map { it.lowercase() }.toSet()
-    val intersection = normalizedA.intersect(normalizedB).size
-    val union = normalizedA.union(normalizedB).size
-    return if (union > 0) intersection.toDouble() / union else 0.0
+val textMeasurer = rememberTextMeasurer()
+Canvas(modifier = ...) {
+    val layout = textMeasurer.measure(artistName, style = TextStyle(...))
+    drawText(layout, topLeft = nodeCenter - Offset(layout.size.width / 2f, layout.size.height / 2f))
 }
-
-// Jaccard distance (for "most different" pair selection)
-fun tagJaccardDistance(tagsA: Set<String>, tagsB: Set<String>): Double =
-    1.0 - tagJaccard(tagsA, tagsB)
 ```
 
-For the Random Bridge button: fetch tag sets for all liked artists from the existing `lastfm` module, compute pairwise Jaccard distances, pick the pair with maximum distance. For N liked artists, this is O(N²) comparisons — fine for the typical Spotify library size (tens to low hundreds of liked artists).
-
-The artist tag data needed for this computation is already available from Last.fm's `artist.getInfo` endpoint, which the existing `lastfm` module calls. No new API calls required.
-
-**Confidence:** HIGH — algorithm is trivial, verified against EccoPath's own implementation.
+**Confidence:** HIGH — verified against official Android Developers Canvas docs and DrawScope API reference.
 
 ---
 
-## New Gradle Module
+### 2. Touch Gesture Handling — Tap + Pan + Pinch-Zoom
 
-**Recommendation: Create `eccopath` module as an Android Library**
+**API:** `androidx.compose.foundation.gestures` (already `compose-foundation` in `libs.versions.toml`)
 
-Instead of loading the bridge WebView directly in the `app` module, encapsulate it:
+The graph needs three distinct gestures that must coexist:
+- **Single tap** on a node — trigger FALA expansion or artist selection
+- **Pan** — drag the whole graph
+- **Pinch-to-zoom** — scale the disk in/out
 
+**Recommended pattern: two stacked `pointerInput` modifiers**
+
+Compose resolves multiple `pointerInput` blocks sequentially. Use one block for transform (pan + zoom) and a separate one for tap. The tap detector runs after the transform detector has consumed multi-touch events.
+
+```kotlin
+Modifier
+    .pointerInput(Unit) {
+        detectTransformGestures { centroid, pan, zoom, _ ->
+            // Update panOffset and zoomScale state
+            panOffset += pan
+            zoomScale = (zoomScale * zoom).coerceIn(0.3f, 5f)
+        }
+    }
+    .pointerInput(Unit) {
+        detectTapGestures { tapOffset ->
+            // Hit-test against node positions
+            val hitNode = nodePositions.entries.firstOrNull { (_, pos) ->
+                val dx = tapOffset.x - (pos.x * zoomScale + panOffset.x + diskCenter.x)
+                val dy = tapOffset.y - (pos.y * zoomScale + panOffset.y + diskCenter.y)
+                (dx * dx + dy * dy) <= (nodeRadius * zoomScale).let { it * it }
+            }
+            hitNode?.let { onNodeTap(it.key) }
+        }
+    }
 ```
-eccopath/                   ← new Android Library module
-├── BridgeWebView.kt        ← Compose composable wrapping WebView
-├── BridgeViewModel.kt      ← state management for bridge computation
-├── BridgeMessage.kt        ← sealed class for JS → Kotlin messages
-└── TrackMatcher.kt         ← fuzzy match artist+track to YT Music IDs
-```
 
-This follows the existing module pattern (innertube, spotify, lastfm, etc.) and keeps bridge logic isolated from the app module's 36-ViewModel monolith.
+**Why `detectTransformGestures` not `transformable` modifier:**
+The `transformable` modifier does not consume the gesture from the pointer input pipeline in the same way — using `detectTransformGestures` inside `pointerInput` gives more predictable behavior when stacking with a tap detector. Both belong to `androidx.compose.foundation.gestures`.
 
-**No new module is strictly required for MVP** — the code can live in `app` — but the module boundary is the right long-term structure, matching the project's existing architecture.
+**Hit testing:** Node positions from `computeHyperbolicLayout()` are in disk-relative coordinates (origin at disk center, unit = pixels). Apply the current pan offset and zoom scale to transform tap coordinates into disk space, then check Euclidean distance to each node center. Node tap radius should be at minimum `ViewConfiguration.minimumTouchTargetSize` (48dp) regardless of visual node size.
+
+**Confidence:** HIGH — both `detectTransformGestures` and `detectTapGestures` are stable Compose APIs verified in official docs (updated February 2026). The stacking pattern is documented in the "Understand gestures" guide.
 
 ---
 
-## ProGuard Rules
+### 3. Animation APIs — Node State Transitions
 
-The following rules are needed in `app/proguard-rules.pro`:
+**API:** `androidx.compose.animation.core` (already present via `compose-animation` in `libs.versions.toml`)
 
-```proguard
-# WebView JS bridge via addWebMessageListener
--keep class androidx.webkit.** { *; }
--keepclassmembers class androidx.webkit.** { *; }
+No new libraries needed. Use the following per node state:
 
-# Keep any @JavascriptInterface methods if addJavascriptInterface is used as fallback
--keepclassmembers class * {
-    @android.webkit.JavascriptInterface <methods>;
-}
+| Animation Need | API | Pattern |
+|---|---|---|
+| Node bloom on expansion | `Animatable(0f)` + `animateTo(1f, tween(300))` | Launch in `LaunchedEffect(nodeState)` |
+| Loading pulse on frontier nodes | `rememberInfiniteTransition()` + `animateFloat(0.4f, 1f, infiniteRepeatable(tween(900, easing=EaseInOutSine), RepeatMode.Reverse))` | Drives node alpha or scale |
+| State change (frontier → active) | `animateColorAsState(targetColor, tween(200))` | For node fill color |
+| Path highlight sweep | `animateFloatAsState(1f, tween(500))` | Drives arc draw progress |
+| Node scale on select | `animateFloatAsState(if (selected) 1.2f else 1f, spring(dampingRatio=0.6f))` | Spring gives organic feel |
 
-# Apache Commons Text — used for fuzzy matching
--keep class org.apache.commons.text.** { *; }
-```
+**Node state machine** matches `NodeState` from `types.ts` exactly:
+`seed | active | explored | frontier | current | loading | error`
 
-**Confidence:** HIGH — ProGuard rules for WebView bridge from official Android docs.
+Map each state to a color from `MaterialTheme.colorScheme` at the call site — do not hardcode colors. Suggested mapping:
+
+| NodeState | Color | Animation |
+|---|---|---|
+| `seed` | `primary` | Static, larger radius |
+| `current` | `secondary` | Subtle scale pulse via spring |
+| `active` | `onSurface` | Static |
+| `frontier` | `tertiary` | Alpha pulse via InfiniteTransition |
+| `loading` | `surfaceVariant` | Opacity pulse |
+| `explored` | `outline` | Dimmed, no animation |
+| `error` | `error` | Static |
+
+**Important:** Keep per-node `Animatable` instances in a `remember { mutableStateMapOf() }` inside the composable — one entry per node ID. Create on node appearance, remove on node removal to avoid accumulating stale animators.
+
+**Confidence:** HIGH — all APIs stable in Compose 1.10.2, verified against official animation docs and InfiniteTransition API reference.
 
 ---
 
-## Summary of New Dependencies
+### 4. Hyperbolic Layout Math — Poincare Disk
 
-| Dependency | Version | Purpose | License |
-|---|---|---|---|
-| `androidx.webkit:webkit` | 1.15.0 | WebViewAssetLoader, addWebMessageListener | Apache 2.0 |
-| `org.apache.commons:commons-text` | 1.13.0 | JaroWinklerSimilarity, LevenshteinDistance | Apache 2.0 |
+**No library needed.** Port `hyperbolicLayout.ts` directly to Kotlin using `kotlin.math`.
 
-**Not added:**
-- No Compose WebView wrapper library — raw `AndroidView` is sufficient
-- No Jaccard library — 10-line pure Kotlin implementation
-- No separate JS bridge library — AndroidX WebKit covers it
+The TypeScript implementation in `/home/kepler/Projects/EccoPath/lib/hyperbolicLayout.ts` is self-contained pure math (166 lines). The Kotlin port is a mechanical translation.
+
+**Math equivalence:**
+
+| TypeScript | Kotlin |
+|---|---|
+| `Math.tanh(x)` | `kotlin.math.tanh(x)` (stdlib, no import) |
+| `Math.PI` | `kotlin.math.PI` |
+| `Math.cos(a) / Math.sin(a)` | `kotlin.math.cos(a) / kotlin.math.sin(a)` |
+| `Math.atan2(y, x)` | `kotlin.math.atan2(y, x)` |
+| `Math.sqrt(x)` | `kotlin.math.sqrt(x)` |
+| `Map<string, Position>` | `Map<String, Offset>` (Compose `Offset`) |
+
+**Use `Offset` as the position type** — Compose Canvas operates in `Offset` coordinates, and `computeHyperbolicLayout()` returns positions that feed directly into Canvas draw calls. No intermediate coordinate type needed.
+
+**Geodesic arc rendering:**
+`computeGeodesicArc()` in TypeScript returns `{ cx, cy, r, startAngle, endAngle, ccw }`. The Compose `drawArc()` function takes `(topLeft, size, startAngle, sweepAngle)` — a different convention. Convert:
+```kotlin
+// Given arc circle center (cx, cy) and radius r:
+val topLeft = Offset(cx - r, cy - r)
+val size = Size(r * 2, r * 2)
+// sweepAngle = endAngle - startAngle, adjusted for ccw winding
+val sweepAngle = if (ccw) -(positiveArcLength) else positiveArcLength
+drawArc(color, startAngle.toDegrees(), sweepAngle.toDegrees(), useCenter=false, topLeft, size, style=Stroke(...))
+```
+
+**Do not add any math/geometry library.** Apache Commons Math, JTS Topology Suite, etc. are heavy JVM libraries with thousands of classes. `kotlin.math` already has every function the Poincare disk computation needs.
+
+**Confidence:** HIGH — `kotlin.math.tanh` confirmed in Kotlin stdlib docs. The algorithm is deterministic math with no platform-specific behavior.
+
+---
+
+### 5. Graph Data Structure — Kotlin Port of `GraphNode` / `GraphData`
+
+**No library needed.** Port `types.ts` directly:
+
+```kotlin
+// com/metrolist/music/bridge/graph/GraphNode.kt
+enum class NodeState { SEED, ACTIVE, EXPLORED, FRONTIER, CURRENT, LOADING, ERROR }
+
+@Immutable
+data class GraphNode(
+    val id: String,           // artist name (unique key)
+    val name: String,         // display name
+    val state: NodeState,
+    val match: Float? = null, // similarity 0-1
+    val parentId: String? = null,
+    val listeners: Long? = null,
+    val imageUrl: String? = null,
+    val tags: List<String> = emptyList(),
+)
+
+@Immutable
+data class GraphLink(
+    val source: String,
+    val target: String,
+    val isActivePath: Boolean = false,
+)
+
+@Immutable
+data class GraphData(
+    val nodes: List<GraphNode>,
+    val links: List<GraphLink>,
+)
+```
+
+`@Immutable` on data classes is already the project convention (see `BridgeArtistMetaEntity`, `BridgeSimilarArtistEntity`). Use `persistentListOf()` from `kotlinx.collections.immutable` if recomposition performance becomes a concern — but only add that library if profiling demonstrates a need. Do not add it preemptively.
+
+**Confidence:** HIGH — direct port of verified TypeScript types.
+
+---
+
+### 6. Room DB Schema — Bridge History Persistence
+
+**API:** `androidx.room:room-runtime:2.8.4` (already present)
+
+**New tables needed** (Room DB currently at version 37):
+
+#### Table: `bridge_history`
+Stores one row per completed bridge or path walk.
+
+```kotlin
+@Entity(tableName = "bridge_history")
+data class BridgeHistoryEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val fromArtist: String,
+    val toArtist: String?,             // null for path-walk (no destination)
+    val pathJson: String,              // JSON-encoded List<String>
+    val mode: String,                  // "bridge" | "pathwalk"
+    val createdAt: Long = System.currentTimeMillis(),
+)
+```
+
+#### Table: `bridge_walk_step`
+Stores each node expansion step in a path walk session (for replay).
+
+```kotlin
+@Entity(tableName = "bridge_walk_step")
+data class BridgeWalkStepEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val historyId: Long,               // FK to bridge_history.id
+    val artistName: String,
+    val stepIndex: Int,
+    val nodeState: String,             // serialized NodeState name
+    val matchScore: Float? = null,
+    val parentArtist: String? = null,
+)
+```
+
+**Migration:** Room 2.8.4 supports `@AutoMigration` for new table additions — no `AutoMigrationSpec` needed for a pure `CREATE TABLE`. Add:
+
+```kotlin
+// InternalDatabase.kt
+@Database(
+    version = 38,
+    entities = [
+        // ...existing entities...
+        BridgeHistoryEntity::class,
+        BridgeWalkStepEntity::class,
+    ],
+    autoMigrations = [
+        AutoMigration(from = 37, to = 38)
+    ],
+    exportSchema = true,
+)
+```
+
+**DAO additions** (in `DatabaseDao.kt`):
+```kotlin
+@Insert
+suspend fun insertBridgeHistory(entity: BridgeHistoryEntity): Long
+
+@Query("SELECT * FROM bridge_history ORDER BY createdAt DESC LIMIT 50")
+fun recentBridgeHistory(): Flow<List<BridgeHistoryEntity>>
+
+@Query("DELETE FROM bridge_history WHERE id = :id")
+suspend fun deleteBridgeHistory(id: Long)
+
+@Insert
+suspend fun insertWalkStep(step: BridgeWalkStepEntity)
+
+@Query("SELECT * FROM bridge_walk_step WHERE historyId = :historyId ORDER BY stepIndex")
+suspend fun walkStepsForHistory(historyId: Long): List<BridgeWalkStepEntity>
+```
+
+**Why not reuse the existing `BridgeCard` as the persistence model:**
+`BridgeCard` is a UI model with `MediaItem` lists that are not serializable to Room. The history tables are thin — store the path as a JSON array, replay by re-running the bridge/walk algorithm with the same inputs rather than storing full MediaItem metadata.
+
+**Confidence:** HIGH — Room 2.8.4 AutoMigration for new tables confirmed in official docs (no AutoMigrationSpec needed for CREATE TABLE). Schema version 37 confirmed from `app/schemas/` directory.
 
 ---
 
@@ -345,45 +307,65 @@ The following rules are needed in `app/proguard-rules.pro`:
 
 | Avoid | Why |
 |---|---|
-| `addJavascriptInterface()` | No origin restriction; any iframe can call Kotlin native code |
-| `file:///android_asset/` URL scheme | Breaks IndexedDB (Chromium blocks storage on opaque `file://` origins) |
-| `allowUniversalAccessFromFileURLs = true` | Security regression, also does not fix IndexedDB |
-| Accompanist `WebView` | Deprecated, officially unmaintained since 2023 |
-| `fuzzywuzzy-kotlin` (willowtreeapps or jens-muenker) | Stale; Apache Commons Text is better maintained and already in the dependency family |
-| Capacitor or Cordova | Full hybrid frameworks — overkill, heavy, conflict with Compose architecture |
-| A custom WebSocket bridge | Not needed; `addWebMessageListener` provides reliable two-way messaging |
+| Any Android graph visualization library | All Compose graph libs are charting libraries (bar/line/pie). None supports hyperbolic layout. Dead weight. |
+| `kotlinx.collections.immutable` | Only add if profiling shows recomposition issues with `List<GraphNode>`. Not needed preemptively. |
+| Any Apache Commons Math / JTS / geometry library | `kotlin.math` covers every function in `hyperbolicLayout.ts`. Heavy JVM libs with no benefit here. |
+| react-force-graph-2d or any web-based graph renderer | The TypeScript `types.ts` references react-force-graph-2d for the web app. The Android port uses Compose Canvas. Do not load a JS graph library in a WebView. |
+| `transformable` modifier for the graph | Use `detectTransformGestures` inside `pointerInput` instead — more predictable behavior when stacking with a tap detector. |
+| Force simulation (d3-force or equivalent) | The TypeScript `GraphNode` has `x`, `y`, `fx`, `fy` d3 fields, but the Kotlin port uses `computeHyperbolicLayout()` for positioning. Static hyperbolic layout, no physics simulation needed. |
+| Separate `eccopath` Gradle module for graph code | Graph code belongs in the existing `app` module, in `ui/screens/bridge/` and `bridge/graph/`. The module split recommendation from the v1.0 STACK.md was for the WebView wrapper, which is now dormant. |
+
+---
+
+## Integration Points With Existing Code
+
+| New Feature | Integrates With | How |
+|---|---|---|
+| `computeHyperbolicLayout()` Kotlin port | `BridgeViewModel` | ViewModel holds `GraphData`, calls layout function reactively when nodes change |
+| `HyperbolicGraphCanvas` composable | `BridgeScreen.kt` | Replaces or co-exists with stacked `BridgeCardView` depending on mode toggle |
+| `BridgeHistoryEntity` | `DatabaseDao.kt` | Add new DAO methods to the existing 1747-line DAO interface |
+| Node tap → FALA expansion | `BridgeAlgorithm.kt` | `onNodeTap(artistId)` triggers a new `findBridge()` call with tapped artist as one endpoint |
+| Node tap → playback | `PlayerConnection` | Same `seekTo()` pattern already in `BridgeScreen.kt` `onArtistClick` handler |
+| `BridgeHistoryEntity` | `BridgeViewModel` | ViewModel saves history on bridge completion, exposes `recentBridgeHistory()` Flow |
 
 ---
 
 ## Installation Summary
 
-```bash
-# gradle/libs.versions.toml additions
-webkit = "1.15.0"
-commons-text = "1.13.0"
+**No new Gradle dependencies.** Zero changes to `libs.versions.toml` or `build.gradle.kts`.
 
-# app/build.gradle.kts additions
-implementation(libs.androidx.webkit)
-implementation(libs.apache.commons.text)
+**Room schema change only:**
+```kotlin
+// InternalDatabase.kt — bump version from 37 to 38
+@Database(version = 38, autoMigrations = [AutoMigration(from = 37, to = 38)])
 ```
 
-EccoPath build pipeline (separate from Gradle — run before Android build):
-```bash
-cd eccopath/          # git submodule
-npm ci
-NEXT_OUTPUT=export npm run build    # outputs to eccopath/out/
+New Kotlin files to create:
+```
+app/src/main/kotlin/com/metrolist/music/bridge/graph/
+  GraphNode.kt          — data classes (port of types.ts NodeState, GraphNode, GraphLink, GraphData)
+  HyperbolicLayout.kt   — computeHyperbolicLayout() + computeGeodesicArc() (port of hyperbolicLayout.ts)
+
+app/src/main/kotlin/com/metrolist/music/db/entities/
+  BridgeHistoryEntity.kt
+  BridgeWalkStepEntity.kt
+
+app/src/main/kotlin/com/metrolist/music/ui/screens/bridge/
+  HyperbolicGraphCanvas.kt  — Compose Canvas composable for graph rendering
 ```
 
 ---
 
 ## Sources
 
-- AndroidX WebKit 1.15.0 release notes: https://developer.android.com/jetpack/androidx/releases/webkit
-- Android JS bridge official docs: https://developer.android.com/develop/ui/views/layout/webapps/native-api-access-jsbridge
-- WebViewAssetLoader official docs: https://developer.android.com/develop/ui/views/layout/webapps/load-local-content
-- WebViewAssetLoader API reference: https://developer.android.com/reference/androidx/webkit/WebViewAssetLoader
-- Next.js static export: https://nextjs.org/docs/pages/guides/static-exports
-- Apache Commons Text: https://commons.apache.org/proper/commons-text/
-- kt-fuzzy: https://github.com/solo-studios/kt-fuzzy
-- Can I WebView IndexedDB: https://caniwebview.com/features/mdn-indexeddb/
-- compose-webview (KevinnZou): https://github.com/KevinnZou/compose-webview
+- [Compose Canvas DrawScope API](https://developer.android.com/develop/ui/compose/graphics/draw/overview) — verified drawCircle, drawArc, drawPath, drawText signatures
+- [Brush.radialGradient docs](https://developer.android.com/develop/ui/compose/graphics/draw/brush) — verified radial gradient parameters
+- [Multi-touch gestures (pan, zoom)](https://developer.android.com/develop/ui/compose/touch-input/pointer-input/multi-touch) — verified detectTransformGestures, transformable, updated February 2026
+- [Tap and press gestures](https://developer.android.com/develop/ui/compose/touch-input/pointer-input/tap-and-press) — verified detectTapGestures + Offset position
+- [Value-based animations](https://developer.android.com/develop/ui/compose/animation/value-based) — animateFloatAsState, Animatable, rememberInfiniteTransition
+- [InfiniteTransition API reference](https://developer.android.com/reference/kotlin/androidx/compose/animation/core/InfiniteTransition)
+- [Room AutoMigration for new tables](https://developer.android.com/training/data-storage/room/migrating-db-versions) — confirmed new table = no AutoMigrationSpec needed
+- [kotlin.math.tanh](https://kotlinlang.org/api/core/kotlin-stdlib/kotlin.math/tanh.html) — confirmed in Kotlin stdlib
+- [TextMeasurer API reference](https://developer.android.com/reference/kotlin/androidx/compose/ui/text/TextMeasurer) — rememberTextMeasurer + DrawScope.drawText
+- EccoPath source: `/home/kepler/Projects/EccoPath/lib/hyperbolicLayout.ts` — reference implementation verified
+- EccoPath types: `/home/kepler/Projects/EccoPath/lib/types.ts` — NodeState, GraphNode, GraphLink type definitions

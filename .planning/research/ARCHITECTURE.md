@@ -1,363 +1,500 @@
-# Architecture Patterns
+# Architecture Patterns: Path Walker Integration
 
-**Domain:** Android MVVM — WebView JS bridge + playlist generation integrated into existing Media3 app
-**Researched:** 2026-04-03
-**Confidence:** HIGH (existing codebase verified, Android official docs verified)
-
----
-
-## How the New Features Fit the Existing Layers
-
-The existing architecture has five clearly separated layers: UI (Compose screens), ViewModel, Data (Room + external API clients), Playback (`MusicService` + `PlayerConnection`), and a Lyrics helper. The bridge feature adds work to every layer except Lyrics, and introduces one new component — the JS bridge object — that lives at the boundary between the WebView and the ViewModel.
-
-No existing layer needs to be restructured. Bridge is additive.
+**Domain:** Android music discovery app — adding interactive FALA graph exploration to existing Bridge tab
+**Researched:** 2026-04-05 (supersedes 2026-04-03 draft; focused on v2.0 Path Walker milestone)
+**Overall confidence:** HIGH — all analysis is from direct inspection of the production codebase and EccoPath TypeScript source
 
 ---
 
-## Component Map
+## Source Map (files inspected for this research)
 
-### New Components Required
-
-| Component | Layer | Responsibility |
-|-----------|-------|----------------|
-| `BridgeScreen` | UI | Two artist search inputs, loading states, linear path result view |
-| `BridgeViewModel` | ViewModel | Owns all bridge state: search inputs, bridge status, path result, playlist build progress |
-| `BridgeWebViewManager` | UI helper | Wraps `AndroidView(WebView)`, injects JS bridge object, loads bundled EccoPath assets |
-| `MeldBridgeInterface` | JS bridge | `@JavascriptInterface`-annotated class or `WebMessageListener` that receives `createPlaylist(json)` from JS and dispatches to ViewModel |
-| `BridgePlaylistBuilder` | Repository / ViewModel | Takes bridge path JSON, searches YT Music per artist, assembles ordered `List<MediaItem>` |
-| `BridgeQueue` | Playback queue | Implements `Queue` interface wrapping a pre-resolved `List<MediaItem>` — essentially identical to `ListQueue` |
-| EccoPath bundled assets | `app/src/main/assets/` | Built Next.js output from submodule, loaded via `WebViewAssetLoader` |
-
-### Existing Components Used (No Modification)
-
-| Component | How Used |
-|-----------|----------|
-| `ListQueue` | `BridgeQueue` can reuse this directly — it accepts a `List<MediaItem>` with a title |
-| `PlayerConnection.playQueue(queue)` | Called from `BridgeViewModel` after playlist is built to hand off to `MusicService` |
-| `YouTube.search(query, filter)` | Called from `BridgePlaylistBuilder` for each artist+track pair |
-| `Spotify` singleton | Read liked artists for seed suggestions and Random Bridge Jaccard scoring |
-| `MusicDatabase` | Existing `SongEntity` / `ArtistEntity` cache; optional — not required for MVP |
-| `Screens.kt` + `NavigationBuilder.kt` | Add Bridge tab entry here |
-| `AndroidView` pattern | Already established in `SpotifyLoginScreen` — exact same pattern for bridge WebView |
+| File | Role |
+|------|------|
+| `BridgeViewModel.kt` | Existing ViewModel — 789 lines, owns all bridge search and card state |
+| `BridgeScreen.kt` | Existing screen composable — single scrolling Column, no mode toggle yet |
+| `PathSheet.kt` | `HorizontalPathStrip`, `PathNodeRow`, `PathSheet`, shared composables |
+| `KotlinBridgeCache.kt` | L1 ConcurrentHashMap + L2 Room two-level cache, `@Singleton` |
+| `BridgeAlgorithm.kt` | Native Kotlin bidirectional beam search, `@Singleton` |
+| `BridgePlaylistBuilder.kt` | Last.fm top-tracks + YouTube Music track resolution |
+| `BridgeArtistMetaEntity.kt` | Room entity: artist tags/listeners cache (purgeable) |
+| `BridgeSimilarArtistEntity.kt` | Room entity: similar-artist list cache (purgeable) |
+| `DatabaseDao.kt` (lines 1750-1769) | Bridge cache DAO methods — end of 1747-line monolithic DAO |
+| `EccoPath/stores/graphStore.ts` | Zustand store: nodes/links/actions |
+| `EccoPath/lib/types.ts` | `GraphNode`, `GraphLink`, `NodeState` type definitions |
+| `EccoPath/lib/hyperbolicLayout.ts` | Poincaré disk layout: `computeHyperbolicLayout()` + `computeGeodesicArc()` |
+| `EccoPath/lib/crawl.ts` | BFS crawler that streams batches to the graph store (FALA precursor) |
 
 ---
 
-## Recommended Architecture
+## Integration Decision Summary
 
-```
-BridgeScreen (Compose)
-  ├── observes BridgeViewModel.uiState: StateFlow<BridgeUiState>
-  ├── dispatches user events to BridgeViewModel (search, random bridge)
-  └── contains BridgeWebViewManager composable
-        └── AndroidView(WebView)
-              ├── loads: https://appassets.androidplatform.net/assets/eccopath/index.html
-              ├── WebViewAssetLoader intercepts → serves from app/src/main/assets/eccopath/
-              └── JS bridge registered before loadUrl()
-                    └── MeldBridgeInterface
-                          └── createPlaylist(json) → posts to BridgeViewModel via callback
-
-BridgeViewModel (HiltViewModel)
-  ├── MutableStateFlow<BridgeUiState>
-  ├── receives bridge result via bridgeCallback (function ref or Channel)
-  ├── launches BridgePlaylistBuilder in viewModelScope
-  └── calls playerConnection.playQueue(BridgeQueue(...)) when playlist is ready
-
-BridgePlaylistBuilder (plain class, no @Singleton)
-  ├── takes List<BridgeArtist> from bridge JSON
-  ├── for each artist: YouTube.search("$trackName $artistName", SONG_FILTER) → take best match
-  ├── skips silently on match failure (no throw)
-  └── returns List<MediaItem> in genre-transition order
-
-BridgeQueue : Queue
-  └── delegates to ListQueue("Bridge: $from → $to", items)
-```
+| Question | Decision |
+|----------|----------|
+| Separate VM or extend BridgeViewModel? | Separate `PathWalkerViewModel` |
+| Graph state pattern? | `StateFlow<PathWalkerGraphState>` in ViewModel — no Zustand equivalent needed |
+| Hyperbolic layout where? | `Dispatchers.Default` coroutine, positions stored in node data — never in draw phase |
+| Room schema for history? | Three new tables; do NOT extend existing cache tables |
+| Playback integration? | Identical pattern to `BridgeViewModel.buildPlaylistProgressive()` |
+| Navigation? | Same `BridgeScreen` with mode toggle — no new NavHost route |
+| PathSheet/HorizontalPathStrip reuse? | `HorizontalPathStrip` and `PathNodeRow` directly reusable; `PathSheet` bottom-sheet wrapper not needed |
+| Concurrent state handling? | Independent ViewModel lifecycles give natural isolation; no cross-ViewModel guards needed |
 
 ---
 
-## Data Flow (Explicit Direction)
+## Question 1: Separate ViewModel or extend BridgeViewModel?
 
-```
-1. User types "From" + "To" in BridgeScreen
-   → BridgeViewModel.setFromArtist(name) / setToArtist(name)
+**Decision: Separate `PathWalkerViewModel`.**
 
-2. User taps "Find Bridge"
-   → BridgeViewModel.startBridge()
-   → BridgeViewModel emits BridgeUiState.Loading
-   → calls webView.evaluateJavascript("EccoPath.startBridge('$from','$to')", null)
-      (must be posted to main thread — WebView methods are main-thread only)
+`BridgeViewModel` is already 789 lines managing: 8 autocomplete StateFlows, 5 seed suggestion StateFlows, bridge cards list, active path tracking, familiarity resolution, tag prefetching, and Jaccard pair selection. Adding Path Walker on top produces a 1,200+ line god-ViewModel that is untestable.
 
-3. EccoPath beam search runs inside WebView (JS, async, uses Last.fm via IndexedDB cache)
+The state shapes are fundamentally different and should not share a container:
 
-4. EccoPath calls window.MeldBridge.createPlaylist(jsonString) when done
-   → MeldBridgeInterface.createPlaylist(json) fires on JavaBridge background thread
-   → MeldBridgeInterface posts result to BridgeViewModel via pre-registered callback lambda
-      (callback is set by ViewModel, bridge object just calls it)
+| Concern | Bridge | Path Walker |
+|---------|--------|-------------|
+| Inputs | 2 text fields (from/to) | 1 seed artist selection |
+| Operation | One-shot search returning a result | Iterative step-by-step navigation |
+| State shape | `List<BridgeCard>` (completed results) | `PathWalkerGraphState` (live growing graph) |
+| Playback trigger | Search completion | Each user step |
+| "Path" meaning | Fixed algorithm output | Grows per user decision |
 
-5. BridgeViewModel receives JSON string
-   → parses to List<BridgeArtist>
-   → emits BridgeUiState.PathFound(artists)   ← screen shows linear path view immediately
-   → launches viewModelScope.launch(Dispatchers.IO) { buildPlaylist(artists) }
-
-6. BridgePlaylistBuilder.build(artists)
-   → for each artist: 2 popular + 3-5 deep cuts (separate searches or top-tracks endpoint)
-   → YouTube.search("${track.title} ${track.artist}", SearchFilter.SONG) → first result
-   → collect matched MediaItems, skip nulls
-   → returns List<MediaItem>
-
-7. BridgeViewModel receives playlist
-   → emits BridgeUiState.PlaylistReady(path, itemCount)
-   → calls playerConnection.playQueue(ListQueue("$from → $to", mediaItems))
-
-8. MusicService receives queue via existing playQueue() path
-   → ExoPlayer resolves stream URLs via ResolvingDataSource (existing)
-   → Media session, notification, background playback — all existing, zero new code
-
-9. BridgeScreen observes BridgeUiState.PlaylistReady
-   → shows linear path view with labeled bridge artists
-   → player bar begins playing (existing PlayerConnection StateFlow updates)
-```
+`PathWalkerViewModel` receives `KotlinBridgeCache` and `BridgePlaylistBuilder` via `@Inject constructor` — the same singletons, zero duplication. Both ViewModels instantiate via `hiltViewModel<T>()` at the top of `BridgeScreen` and survive mode switches independently.
 
 ---
 
-## JS Bridge: Which API to Use
+## Question 2: Graph state — new store pattern or StateFlow in ViewModel?
 
-**Recommendation: `addJavascriptInterface` with `@JavascriptInterface`.**
+**Decision: `StateFlow<PathWalkerGraphState>` inside `PathWalkerViewModel`. No Zustand-equivalent abstraction.**
 
-Rationale: EccoPath is a bundled, first-party asset loaded from `file:///android_asset/` or the `appassets.androidplatform.net` virtual origin. The security concern driving `WebMessageListener` is third-party origins injecting into frames. Since EccoPath is 100% controlled code bundled in the APK, origin filtering gives no additional protection. The `addJavascriptInterface` pattern is simpler, has no API level gating beyond SDK 17 (already met — minSdk 26), and is the pattern the existing codebase uses for its cipher WebViews (`CipherManager`, `SignatureDeobfuscator`).
+EccoPath uses Zustand because React has no built-in solution for fine-grained mutable store with typed actions. Kotlin/Compose does not have this gap. The existing codebase uses exactly this pattern for all complex state: a data class exposed as `StateFlow`, mutated inside the ViewModel via `.value = state.copy(...)`.
 
-The `WebMessageListener` pattern adds `WebViewFeature.isFeatureSupported()` gating complexity with no benefit here.
-
-**Thread safety note:** `@JavascriptInterface` methods are invoked on the `JavaBridge` background thread, not the main thread. The bridge object must not touch the ViewModel directly via StateFlow — instead use a simple lambda callback or `Channel` that the ViewModel registers. All WebView methods (`evaluateJavascript`, `loadUrl`) must be called on the main thread — use `Handler(Looper.getMainLooper()).post { }` or `withContext(Dispatchers.Main)` when calling WebView from a coroutine.
+The Zustand `graphStore.ts` surface maps directly to Kotlin:
 
 ```kotlin
-class MeldBridgeInterface(
-    private val onPlaylistReady: (String) -> Unit,  // called on JavaBridge thread
-) {
-    @JavascriptInterface
-    fun createPlaylist(json: String) {
-        onPlaylistReady(json)  // ViewModel registers this callback; it posts to StateFlow
-    }
-}
-```
+data class PathWalkerGraphState(
+    val seedArtist: String = "",
+    val nodes: List<WalkerNode> = emptyList(),
+    val links: List<WalkerLink> = emptyList(),
+    val activePath: List<String> = emptyList(),  // breadcrumb trail of user choices
+    val currentNodeId: String = "",              // "current" in NodeState terms
+    val isExpanding: Boolean = false,            // node expansion in-flight
+    val expandError: String? = null,
+)
 
-In `BridgeViewModel`:
-```kotlin
-val bridge = MeldBridgeInterface { json ->
-    // called on JavaBridge thread — use postValue equivalent
-    _uiState.value = BridgeUiState.PathReceived(json)
-    viewModelScope.launch(Dispatchers.IO) { buildPlaylist(json) }
-}
-```
+enum class WalkerNodeState { SEED, ACTIVE, EXPLORED, FRONTIER, CURRENT, LOADING, ERROR }
 
-`MutableStateFlow.value = ...` is thread-safe and can be set from any thread. This makes the JavaBridge-thread callback safe to write directly.
+data class WalkerNode(
+    val id: String,           // artist name (normalized key, unique)
+    val name: String,         // display name
+    val state: WalkerNodeState,
+    val match: Float = 0f,
+    val parentId: String? = null,
+    val listeners: Long = 0L,
+    val tags: List<String> = emptyList(),
+    val x: Float = 0f,       // pre-computed Poincare disk position
+    val y: Float = 0f,
+)
 
----
-
-## WebView Asset Loading
-
-**Use `WebViewAssetLoader`** (not `file:///android_asset/`).
-
-`file://` URIs are blocked for `fetch()` and `XMLHttpRequest` cross-origin requests in modern WebView versions. EccoPath's Next.js bundle uses dynamic imports and fetch calls that break under `file://`. `WebViewAssetLoader` serves assets from a virtual HTTPS-like origin (`https://appassets.androidplatform.net`) which passes the same-origin checks.
-
-```
-app/src/main/assets/eccopath/     ← built EccoPath Next.js output (git submodule built assets)
-  index.html
-  _next/
-    static/
-      ...
-```
-
-The `WebViewAssetLoader` maps `https://appassets.androidplatform.net/assets/eccopath/*` to `assets/eccopath/*` in the APK. The `WebViewClient.shouldInterceptRequest()` override handles routing.
-
-**Important:** EccoPath's Last.fm calls go to `https://ws.audioscrobbler.com` — these are real network requests from inside the WebView. The WebView needs `settings.domStorageEnabled = true` (for IndexedDB cache) and internet permission (already present in the manifest from existing Meld functionality).
-
----
-
-## Playlist Builder: Where the Logic Lives
-
-**Location: inside `BridgeViewModel`, not a separate Repository or Service.**
-
-Reasoning:
-- The builder is stateless given its inputs. It does not need Room access (no caching in MVP). A `Repository` abstraction is warranted when multiple ViewModels share the data — only `BridgeViewModel` needs it.
-- Running it in `viewModelScope.launch(Dispatchers.IO)` gives automatic cancellation if the user navigates away, progress emission via `StateFlow`, and access to coroutine operators for parallel per-artist fetching.
-- `MusicService` is already overloaded (3460 lines). Do not add playlist-building logic there.
-- A plain `BridgePlaylistBuilder` class (not a Hilt singleton) can be instantiated inside the ViewModel or injected via Hilt as a `@ViewModelScoped` dependency if testing requires mocking.
-
-**Parallelism:** Use `async/await` or `map { async { } }.awaitAll()` per bridge artist within the `viewModelScope` to run YT Music searches concurrently. With 5-7 bridge artists, 5 tracks each, sequential search would be ~35 network calls in series. Parallel cuts this to ~7 parallel batches (one batch per artist).
-
-```kotlin
-val allTracks: List<MediaItem> = bridgeArtists
-    .map { artist ->
-        async(Dispatchers.IO) { builder.fetchTracksFor(artist) }
-    }
-    .awaitAll()
-    .flatten()
-```
-
----
-
-## Compose State Model
-
-`BridgeViewModel` exposes a single sealed `BridgeUiState` as a `StateFlow`:
-
-```kotlin
-sealed class BridgeUiState {
-    object Idle : BridgeUiState()
-    object SearchingBridge : BridgeUiState()           // WebView running EccoPath
-    data class PathFound(                               // path visible, playlist building
-        val path: List<BridgeArtist>,
-        val playlistProgress: Int,                      // 0..100 for progress bar
-    ) : BridgeUiState()
-    data class PlaylistReady(                           // playing, path view stable
-        val path: List<BridgeArtist>,
-        val trackCount: Int,
-    ) : BridgeUiState()
-    data class Error(val message: String) : BridgeUiState()
-}
-```
-
-Collected in `BridgeScreen` via `collectAsStateWithLifecycle()`. Compose recomposes on each transition. This matches the exact pattern used by every existing ViewModel in the codebase (StateFlow + `collectAsState()`).
-
----
-
-## WebView Lifecycle in Compose
-
-**Critical:** Compose recreates composables on recomposition. Wrap the `WebView` in `AndroidView` with the `remember { }` factory pattern — do not recreate it on recompose.
-
-The existing `SpotifyLoginScreen` does this correctly: the `factory` lambda is passed to `AndroidView`, which only calls it once. The same pattern applies here.
-
-`BridgeWebViewManager` should be a composable that holds the `WebView` instance in a `remember` block, receives the `BridgeViewModel` reference, and adds the bridge interface before calling `loadUrl`. Keep the `WebView` alive as long as the Bridge screen is in the back stack — this avoids re-running beam search if the user briefly navigates away.
-
-If EccoPath computation takes 30+ seconds (realistic for cold start with no IndexedDB cache), the WebView must survive orientation changes. Hoist `WebView` state into the ViewModel or use `rememberSaveable` to restore position. The simpler MVP approach: use `configChanges="orientation|screenSize"` in `AndroidManifest` for `MainActivity` (already likely present given the existing Spotify WebView usage) to prevent recreation.
-
----
-
-## Navigation Integration
-
-Add `Bridge` to `Screens.kt` alongside `Home`, `Search`, `ListenTogether`, `Library`. Register the route in `NavigationBuilder.kt`. Add the tab to `MainActivity`'s bottom navigation bar list.
-
-```kotlin
-object Bridge : Screens(
-    titleId = R.string.bridge,
-    iconIdInactive = R.drawable.bridge_outlined,   // new drawable needed
-    iconIdActive = R.drawable.bridge_filled,
-    route = "bridge"
+data class WalkerLink(
+    val sourceId: String,
+    val targetId: String,
+    val isActivePath: Boolean = false,
 )
 ```
 
-`MainScreens` in `Screens.kt` becomes: `listOf(Home, Search, Bridge, ListenTogether, Library)` — or replace `ListenTogether` if 5 tabs is too many for the design.
+ViewModel mutation methods mirror Zustand actions (`setSeedNode`, `addChildNodes`, `updateActivePath`, etc.) but are plain Kotlin functions that call `_graphState.value = _graphState.value.copy(...)`. For Path Walker scale (50-150 nodes), `List<T>` with immutable copy has negligible CPU cost and is simpler than any custom store abstraction.
 
 ---
 
-## Suggested Build Order (Phase Dependencies)
+## Question 3: Hyperbolic layout computation — where does it run?
 
-Each step depends on the previous being complete or mockable.
+**Decision: Pre-compute positions on `Dispatchers.Default` coroutine, triggered by graph state changes. Store `x`/`y` in `WalkerNode`. Canvas draw phase reads only pre-computed coordinates.**
+
+`computeHyperbolicLayout()` in EccoPath is a pure function: BFS traversal + `tanh()` math, no I/O, no Android framework calls. For 50-150 nodes this runs in under 1ms on a modern device. It must not run inside `DrawScope` because:
+- It would re-run on every frame
+- `DrawScope` lambdas are not coroutine scopes; no structured concurrency is possible inside them
+- It makes the Canvas recomposition-unsafe (cannot call `collectAsState()` during draw)
+
+The correct integration:
 
 ```
-1. Navigation shell
-   Add Bridge tab + empty BridgeScreen composable.
-   Verifies: routing works, bottom nav shows Bridge.
-   No dependencies.
+graph state changes (nodes added/removed)
+  → LaunchedEffect(graphState.nodes, screenRadius) in PathWalkerViewModel or PathWalkerScreen
+  → withContext(Dispatchers.Default) { computeHyperbolicLayout(nodes, screenRadius) }
+  → positions Map<String, Offset> returned
+  → _graphState.value = state.copy(nodes = nodes.map { n ->
+        n.copy(x = positions[n.id]?.x ?: n.x, y = positions[n.id]?.y ?: n.y)
+    })
+  → Canvas reads node.x, node.y — only pre-computed floats, no computation in draw phase
+```
 
-2. BridgeViewModel + BridgeUiState
-   Define state sealed class, wire up StateFlow, connect to empty screen.
-   Verifies: state flows to UI.
-   Depends on: (1).
+`screenRadius` comes from `BoxWithConstraints` in the Canvas composable — measured once on layout. It is stable and safe as a `LaunchedEffect` key.
 
-3. WebView + asset loading
-   Create app/src/main/assets/eccopath/, configure WebViewAssetLoader,
-   load EccoPath index.html in BridgeWebViewManager.
-   Verifies: EccoPath graph renders in WebView.
-   Depends on: EccoPath submodule build output.
+For `computeGeodesicArc()` (link rendering): this function is O(1) per link and returns only `Float` arithmetic results. It is safe to call inline inside `DrawScope` during the draw pass. No pre-computation needed for links.
 
-4. JS bridge (MeldBridgeInterface)
-   Add addJavascriptInterface, stub createPlaylist() to log JSON.
-   Trigger manually via evaluateJavascript from test button.
-   Verifies: JSON flows from JS → Kotlin → Timber log.
-   Depends on: (3).
+---
 
-5. BridgeScreen search inputs + trigger
-   Two artist inputs, Find Bridge button calls evaluateJavascript("EccoPath.startBridge(...)").
-   Verifies: EccoPath runs beam search end-to-end and calls MeldBridge.createPlaylist().
-   Depends on: (4).
+## Question 4: Room DB schema for walk history
 
-6. BridgePlaylistBuilder
-   Parse bridge JSON, YouTube.search() per track, collect MediaItems.
-   Can be unit-tested standalone with mock YouTube responses.
-   Verifies: Given a known bridge path, returns non-empty List<MediaItem>.
-   Depends on: Understanding of EccoPath JSON output schema.
+**Decision: Three new entities in new tables. Do NOT extend existing cache tables.**
 
-7. Queue handoff + playback
-   Call playerConnection.playQueue(ListQueue("$from → $to", items)).
-   Verifies: Bridge playlist plays in existing player bar.
-   Depends on: (5) and (6).
+The existing bridge cache tables (`bridge_similar_artists`, `bridge_artist_meta`) are owned by `KotlinBridgeCache` and are explicitly purgeable — the `init {}` block in `KotlinBridgeCache` purges them entirely on every cold start. Extending these tables with history data would cause silent history loss on cache invalidation.
 
-8. Linear path result view
-   Render BridgeArtist list with genre tags, listener counts, bridge labels.
-   Depends on: (5) (needs real path data to design against).
+New entities:
 
-9. Random Bridge button
-   Fetch Spotify liked artists, compute Tag Jaccard distance, pick two genre-opposite,
-   auto-trigger bridge.
-   Depends on: (5) + existing Spotify.likedArtists() working.
+```kotlin
+// Completed walk session
+@Entity(tableName = "walk_history")
+data class WalkHistoryEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val seedArtist: String,
+    val createdAt: Long = System.currentTimeMillis(),
+    val stepCount: Int,
+    val finalArtist: String,
+    val activePathJson: String,    // JSON List<String> — user's breadcrumb
+    val playedMediaItemsJson: String, // JSON-encoded YT video IDs for replay
+)
+
+// Per-step record (user chose artist B at step N)
+@Entity(
+    tableName = "walk_step",
+    foreignKeys = [ForeignKey(
+        entity = WalkHistoryEntity::class,
+        parentColumns = ["id"],
+        childColumns = ["walkId"],
+        onDelete = ForeignKey.CASCADE,
+    )],
+    indices = [Index("walkId")],
+)
+data class WalkStepEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val walkId: Long,
+    val stepIndex: Int,
+    val fromArtist: String,
+    val toArtist: String,
+    val chosenAt: Long = System.currentTimeMillis(),
+)
+
+// Completed A→B bridge run (separate from walk)
+@Entity(tableName = "bridge_history")
+data class BridgeHistoryEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val fromArtist: String,
+    val toArtist: String,
+    val pathJson: String,          // JSON List<String> — full algorithm path
+    val mediaItemsJson: String,    // JSON-encoded YT video IDs for replay
+    val hopCount: Int,
+    val createdAt: Long = System.currentTimeMillis(),
+)
+```
+
+These three tables require a new Room migration (version increment). All DAO methods go into `DatabaseDao` at the end of the file, consistent with existing project conventions. `BridgeViewModel.startBridge()` persists to `BridgeHistoryEntity` on successful path found. `PathWalkerViewModel.stepTo()` persists `WalkStepEntity` on each choice, and writes `WalkHistoryEntity` on walk end.
+
+---
+
+## Question 5: Path Walker playback integration with PlayerConnection/queue system
+
+**Decision: Identical pattern to `BridgeViewModel.buildPlaylistProgressive()`. No new playback infrastructure.**
+
+`PlayerConnection` is passed from the composable to each playback-triggering ViewModel method as a parameter — never stored in the ViewModel. This is already the established pattern in `replayCard(cardId, playerConnection)`, `onConfirmReplaceQueue(playerConnection)`, `onConfirmPlayNext(playerConnection)`, and `startBridge(from, to, playerConnection)`.
+
+Path Walker step flow:
+
+```
+User taps FALA frontier node (artist B)
+  → PathWalkerViewModel.stepTo(artistB, playerConnection)
+  → _graphState: artistA → EXPLORED, artistB → CURRENT, activePath += artistB
+  → launch(IO) { BridgePlaylistBuilder.buildProgressively(listOf(artistB)) { _, _, tracks ->
+        withContext(Main) {
+            playerConnection.playQueue(ListQueue("Walking: $artistB", tracks))
+        }
+    }}
+  → launch(IO) { KotlinBridgeCache.getSimilarArtists(artistB) → next frontier nodes }
+  → layout recomputed → _graphState updated with new frontier nodes
+  → launch(IO) { WalkStepEntity(walkId, stepIndex, artistA, artistB).persist() }
+```
+
+Music replaces on each step: when the user walks to artist B, artist B's tracks replace the queue. This matches user expectation — "I chose to walk here, play this artist now." The frontier FALA cards render while current music plays; there is no coupling between when a song ends and when the user chooses to walk.
+
+`playerConnection.addToQueue()` is not used for step-to navigation (unlike bridge building which appends tracks progressively). Each step is a fresh queue replacement.
+
+---
+
+## Question 6: Navigation — separate screen or BridgeScreen mode toggle?
+
+**Decision: Same `BridgeScreen` with a two-segment mode toggle at the top. No new NavHost route.**
+
+The product requirement is explicit: "Bridge + Path Walker toggle on Bridge tab." Adding a new route to `Screens.kt` and `NavigationBuilder.kt` would require either a new bottom tab (no space) or a nested `NavGraph` (unnecessary complexity for a simple mode switch inside one tab).
+
+Integration in `BridgeScreen`:
+
+```kotlin
+@Composable
+fun BridgeScreen(navController: NavController) {
+    val bridgeVm = hiltViewModel<BridgeViewModel>()
+    val walkerVm = hiltViewModel<PathWalkerViewModel>()
+    var mode by rememberSaveable { mutableStateOf(BridgeMode.BRIDGE) }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        BridgeModeToggle(mode = mode, onModeChange = { mode = it })
+        when (mode) {
+            BridgeMode.BRIDGE -> BridgeModeContent(viewModel = bridgeVm, navController = navController)
+            BridgeMode.PATH_WALKER -> PathWalkerContent(viewModel = walkerVm)
+        }
+    }
+}
+```
+
+`rememberSaveable` persists mode across back-stack navigation. Both ViewModels are instantiated at `BridgeScreen` entry and survive mode switches — a bridge search running in `bridgeVm.viewModelScope` continues while the user is on the Path Walker view. `BridgeModeToggle` uses `SingleChoiceSegmentedButtonRow` from Material 3 (already a dependency at 1.5.0-alpha09).
+
+`BridgeModeContent` is a refactor of the existing `BridgeScreen` body into a private composable — a mechanical extraction with no logic changes.
+
+---
+
+## Question 7: Shared components from PathSheet.kt
+
+**Decision: `HorizontalPathStrip` and `PathNodeRow` are directly reusable. `PathSheet` bottom-sheet wrapper is not needed in Path Walker.**
+
+`HorizontalPathStrip` is the right component for the walk breadcrumb:
+
+| Parameter | Walk breadcrumb usage |
+|-----------|----------------------|
+| `path` | `graphState.activePath` (the trail the user walked) |
+| `artistMetadata` | Populated from `KotlinBridgeCache` via `PathWalkerViewModel` — same `BridgeArtistInfo` data class |
+| `nowPlayingIndex` | Index of `graphState.currentNodeId` in `activePath` |
+| `familiarityMap` | Same dual-source lookup from `BridgeViewModel.resolveFamiliarity()` — extracted to a shared utility function |
+| `playableArtists` | Artists whose tracks have resolved and been queued |
+| `isBuilding` | `PathWalkerViewModel.isExpanding` |
+| `onArtistClick` | Jump back to an ancestor: replay that artist's cached `mediaItems` |
+
+`PathNodeRow` is reusable for the FALA candidate cards — each frontier node is a `PathNodeRow` displaying the proposed next artist's name, tags, and listener count. Tapping calls `stepTo()`.
+
+`GenreTagChip`, `ArtistFamiliarityBadge`, and `VerticalConnectorLine` are all reusable without modification.
+
+`PathSheet` (the bottom-sheet wrapper with drag handle and `LazyColumn`) is not reused in Path Walker — that component was designed as a standalone bottom sheet triggered from the bridge path view. The breadcrumb in Path Walker is inline in the scrolling screen layout.
+
+One refactor is warranted: `resolveFamiliarity()` logic currently lives inside `BridgeViewModel` as a private function. Extract it as an internal function in a new `BridgeFamiliarityResolver.kt` class (injected into both ViewModels) so `PathWalkerViewModel` does not duplicate it.
+
+---
+
+## Question 8: Concurrent state — bridge search running while Path Walker is active
+
+**Decision: Independent ViewModel lifecycles provide natural isolation. No cross-ViewModel concurrency guard needed.**
+
+When the user switches from Bridge mode to Path Walker mid-search:
+- `BridgeViewModel.isRunning` remains true; the search continues in `viewModelScope`
+- `PathWalkerViewModel` starts fresh with no knowledge of bridge state
+- Switching back to Bridge mode shows the search as it completed (or still in progress)
+
+This is correct behavior. The user should be able to explore Path Walker while waiting for a long bridge search.
+
+Each ViewModel guards its own operations:
+
+- `BridgeViewModel` already has: `if (isRunning) return` in `startBridge()`
+- `PathWalkerViewModel` needs an equivalent: `if (_isExpanding.value) return` in `stepTo()` to prevent double-tap while a FALA expansion is in-flight
+
+Playback is shared (single ExoPlayer via `PlayerConnection`), but this is not a conflict — Path Walker's `playQueue()` intentionally replaces Bridge's queue when the user walks to a new artist. This is the desired behavior.
+
+Room writes from both ViewModels (bridge history + walk step persistence) use the same `DatabaseDao` on `Dispatchers.IO`. Room WAL mode (already configured in the project) handles concurrent writes safely.
+
+---
+
+## Complete Component Boundary Map
+
+```
+BridgeScreen (EXTENDED — mode toggle added)
+├── BridgeModeToggle [NEW composable — SegmentedButton]
+├── BridgeModeContent [REFACTOR — existing BridgeScreen body extracted]
+│   └── BridgeViewModel [EXISTING — unchanged]
+│       ├── BridgeAlgorithm [@Singleton, EXISTING]
+│       ├── KotlinBridgeCache [@Singleton, EXISTING]
+│       ├── BridgePlaylistBuilder [@Inject, EXISTING]
+│       └── MusicDatabase [@Singleton, EXISTING]
+└── PathWalkerContent [NEW composable]
+    ├── PathWalkerGraphCanvas [NEW — Compose Canvas]
+    ├── HorizontalPathStrip [REUSED from PathSheet.kt — walk breadcrumb]
+    ├── PathNodeRow (frontier cards) [REUSED from PathSheet.kt]
+    └── PathWalkerViewModel [NEW @HiltViewModel]
+        ├── KotlinBridgeCache [@Singleton, SHARED with BridgeViewModel]
+        ├── BridgePlaylistBuilder [@Inject, SHARED]
+        ├── BridgeFamiliarityResolver [NEW utility, SHARED with BridgeViewModel]
+        └── MusicDatabase [@Singleton, for history writes]
+
+PathSheet.kt (UNCHANGED)
+├── HorizontalPathStrip [also used in PathWalkerContent]
+├── PathNodeRow [also used in PathWalkerContent]
+├── GenreTagChip [reusable]
+├── ArtistFamiliarityBadge [reusable]
+└── VerticalConnectorLine [reusable]
+
+PathWalkerGraphCanvas [NEW composable]
+├── reads WalkerNode.x/y (pre-computed positions, never computed inside DrawScope)
+├── draws nodes as circles colored by WalkerNodeState
+├── draws links via computeGeodesicArc() (O(1) per link, safe in DrawScope)
+└── pointerInput for tap-to-select frontier node
+
+New Room entities (new DB migration, version bump required):
+├── WalkHistoryEntity  → table "walk_history"
+├── WalkStepEntity     → table "walk_step" (FK: walk_history.id, CASCADE DELETE)
+└── BridgeHistoryEntity → table "bridge_history"
 ```
 
 ---
 
-## Fitting Into Existing MVVM Layers
+## Data Flow: Path Walker Step (end to end)
 
-| Existing Layer | What Bridge Adds | What Stays Unchanged |
-|----------------|-----------------|----------------------|
-| UI (Compose screens) | `BridgeScreen.kt`, `BridgeWebViewManager.kt`, bridge-specific composables (path view, artist card) | All existing screens unmodified |
-| ViewModel | `BridgeViewModel.kt` (new HiltViewModel) | All 36 existing ViewModels unmodified |
-| Data (external APIs) | Uses `YouTube.search()` directly — no new module needed | `innertube/` module unchanged |
-| Data (Room DB) | No new tables in MVP — song matching not cached | `MusicDatabase` / `DatabaseDao` unchanged |
-| Playback | New `BridgeQueue` (can alias `ListQueue`) — no `MusicService` changes | `MusicService`, `PlayerConnection` unchanged |
-| DI (Hilt) | `BridgeViewModel` gets `@Inject PlayerConnection` + optional `@Inject BridgePlaylistBuilder` | `AppModule`, `NetworkModule` unchanged |
+```
+1. User selects seed artist
+   PathWalkerViewModel.setSeed(artist)
+   → KotlinBridgeCache.getSimilarArtists(artist) [Dispatchers.IO]
+   → top N similar artists → frontier WalkerNodes created
+   → computeHyperbolicLayout(nodes, screenRadius) [Dispatchers.Default]
+   → _graphState.value = initial graph: seed + N frontier nodes with positions
 
-`PlayerConnection` is provided as a `CompositionLocal` in `MainActivity` and accessed from Compose screens via `LocalPlayerConnection.current`. `BridgeViewModel` can receive it via Hilt constructor injection (same as existing ViewModels that access it).
+2. Canvas renders (read-only)
+   PathWalkerGraphCanvas observes graphState.nodes
+   Reads node.x, node.y — no computation
+   Calls computeGeodesicArc() per link inline (O(1), pure math)
+   Frontier nodes rendered as tappable targets
+
+3. User taps frontier node (artist B)
+   PathWalkerViewModel.stepTo(artistB, playerConnection)
+   if (_isExpanding.value) return  [double-tap guard]
+   → _isExpanding.value = true
+   → artistA state → EXPLORED
+   → artistB state → CURRENT
+   → activePath += artistB
+   → launch(IO) {
+       BridgePlaylistBuilder.buildProgressively([artistB]) { _, _, tracks ->
+           withContext(Main) { playerConnection.playQueue(ListQueue("Walking: $artistB", tracks)) }
+       }
+     }
+   → launch(IO) {
+       similar = KotlinBridgeCache.getSimilarArtists(artistB)
+       newFrontierNodes = similar.take(5).map { WalkerNode(state = FRONTIER, ...) }
+       newLinks = similar.take(5).map { WalkerLink(sourceId = artistB, ...) }
+       positions = computeHyperbolicLayout(state.nodes + newFrontierNodes) [Default]
+       _graphState.value = state with artistB=CURRENT, new frontiers, updated positions
+       _isExpanding.value = false
+     }
+   → launch(IO) {
+       WalkStepEntity(walkId, stepIndex, artistA, artistB).persist via DatabaseDao
+     }
+
+4. HorizontalPathStrip renders breadcrumb
+   path = graphState.activePath
+   nowPlayingIndex = activePath.indexOf(graphState.currentNodeId)
+   onArtistClick(index) → jump back in queue to that artist's stored mediaItems
+```
+
+---
+
+## Suggested Build Order
+
+### Phase 1: PathWalkerViewModel + FALA expansion (no UI)
+**Why first:** All subsequent phases depend on ViewModel correctness. No UI means no visual polish decisions blocking core logic.
+
+Deliverables:
+- `PathWalkerGraphState`, `WalkerNode`, `WalkerLink`, `WalkerNodeState` data classes
+- `PathWalkerViewModel` with `setSeed()`, `stepTo()`, `_graphState` StateFlow
+- `KotlinBridgeCache` integration (shared singleton — no new code)
+- Unit tests: `setSeed()` produces correct frontier nodes, `stepTo()` transitions node states
+
+### Phase 2: BridgeScreen mode toggle + content split
+**Why second:** BridgeScreen refactoring is a prerequisite for all Path Walker UI. Separating `BridgeModeContent` from `BridgeScreen` body must happen before any Path Walker content can be placed.
+
+Deliverables:
+- `BridgeMode` enum
+- `BridgeModeToggle` composable (`SingleChoiceSegmentedButtonRow`)
+- `BridgeScreen` refactored: `BridgeModeContent` wraps existing body unchanged
+- `PathWalkerContent` composable stub (placeholder text)
+- Acceptance criteria: existing Bridge tab behavior 100% unchanged
+
+### Phase 3: Hyperbolic Canvas
+**Why third:** Independent of the FALA card list UI. Can be developed and polished while Phase 4 is in progress. The hardest new visual component.
+
+Deliverables:
+- `computeHyperbolicLayout()` ported from `hyperbolicLayout.ts` to Kotlin (~150 lines, pure function)
+- `computeGeodesicArc()` ported from `hyperbolicLayout.ts` to Kotlin (~60 lines, pure function)
+- `PathWalkerGraphCanvas` composable: `BoxWithConstraints` + `Canvas`, node circles, link arcs, node state colors
+- Layout triggered via `LaunchedEffect(graphState.nodes, diskRadius)` in `PathWalkerViewModel`
+- Touch detection: `pointerInput` on Canvas, hit-test against node positions, calls `stepTo()`
+
+### Phase 4: FALA card list + playback
+**Why fourth:** Depends on Phase 1 (ViewModel) and Phase 2 (content shell). Not blocked by Phase 3 — can use a placeholder canvas or a simple list-only view initially.
+
+Deliverables:
+- FALA frontier node cards below the canvas (reusing `PathNodeRow`)
+- `stepTo()` triggers `BridgePlaylistBuilder` + `playerConnection.playQueue()`
+- `HorizontalPathStrip` breadcrumb (reusing existing component unchanged)
+- Now-playing highlight via equivalent of `onNowPlayingArtistChanged()`
+
+### Phase 5: Walk history + Bridge history persistence
+**Why fifth:** Non-blocking. History can be added once the end-to-end walk experience is working.
+
+Deliverables:
+- `WalkHistoryEntity`, `WalkStepEntity`, `BridgeHistoryEntity` Room entities
+- New Room migration (version increment)
+- `DatabaseDao` additions: insert/query/delete for walk and bridge history
+- `PathWalkerViewModel.endWalk()` persists `WalkHistoryEntity`
+- `BridgeViewModel.startBridge()` persists `BridgeHistoryEntity` on path found
+- History UI: list screen accessible from a "History" icon in BridgeScreen header
 
 ---
 
 ## Anti-Patterns to Avoid
 
-### Calling WebView methods from IO coroutine dispatcher
-**What goes wrong:** `evaluateJavascript` and `loadUrl` called off the main thread cause `CalledFromWrongThreadException` at runtime.
-**Prevention:** Always wrap WebView calls with `withContext(Dispatchers.Main)`.
+### Anti-Pattern 1: Computing hyperbolic layout inside Canvas DrawScope
+**What:** Calling `computeHyperbolicLayout()` inside `Canvas { ... }` lambda.
+**Why bad:** Runs on every frame, blocks the render thread, causes dropped frames. `DrawScope` is not a coroutine scope — no structured concurrency possible inside it.
+**Instead:** Trigger layout via `LaunchedEffect` on graph state changes, store positions in `WalkerNode.x`/`.y`.
 
-### Holding WebView reference in ViewModel
-**What goes wrong:** ViewModel outlives Activity; holding a `Context`-attached `WebView` causes memory leaks and crashes on configuration change.
-**Prevention:** WebView lives in the Compose `remember { }` block in the UI layer only. Communication from ViewModel to WebView goes through a `StateFlow<WebViewCommand>` that the Compose layer observes and acts on. ViewModel never holds the WebView reference.
+### Anti-Pattern 2: Storing PlayerConnection in PathWalkerViewModel
+**What:** `@Inject constructor(... playerConnection: PlayerConnection)`.
+**Why bad:** `PlayerConnection` holds a reference to the Android `Player` object. Injecting it into a ViewModel-scoped component causes lifecycle mismatch and leaks.
+**Instead:** Pass `playerConnection` as a parameter to each playback method, exactly as `BridgeViewModel.replayCard(cardId, playerConnection)` does.
 
-### Building playlist inside MusicService
-**What goes wrong:** `MusicService` is already 3460 lines and handles ExoPlayer, queue, session, scrobbling, Discord RPC, download manager, equalizer, crossfade, sleep timer. Adding playlist building adds another async responsibility, making the service harder to reason about and test.
-**Prevention:** All playlist building in `BridgeViewModel`/`BridgePlaylistBuilder`. Service receives only a fully-built `Queue`.
+### Anti-Pattern 3: Adding history columns to existing cache tables
+**What:** Adding `walkId` or `historyFlag` to `BridgeSimilarArtistEntity` or `BridgeArtistMetaEntity`.
+**Why bad:** `KotlinBridgeCache.init {}` purges both tables on every cold start (`clearAllBridgeSimilarArtists()`, `clearAllBridgeArtistMeta()`). History rows would be silently deleted as a cache side effect.
+**Instead:** Dedicated history tables with no coupling to cache tables.
 
-### Sequential YT Music searches
-**What goes wrong:** 35 sequential network calls (7 artists × 5 tracks) at ~300ms each = ~10.5 seconds blocking the user.
-**Prevention:** `async/awaitAll` per artist group. Results in ~2-3 seconds wall time.
+### Anti-Pattern 4: Cancelling BridgeViewModel search on mode switch
+**What:** Observing the mode toggle in `BridgeViewModel` and cancelling `startBridge()` coroutine when switching to Path Walker mode.
+**Why bad:** Silent data loss. User may explore Path Walker while waiting for a bridge, then want to switch back to see the result.
+**Instead:** Independent ViewModel lifecycles. Mode is purely a UI concern inside `BridgeScreen`.
 
-### Recreating WebView on recomposition
-**What goes wrong:** Compose recompositions are frequent. A new `WebView` each time loses the EccoPath JS state, re-runs beam search, discards IndexedDB cache.
-**Prevention:** `val webView = remember { WebView(context).apply { ... } }` — create once, reuse. `AndroidView(factory = { webView })`.
+### Anti-Pattern 5: Separate StateFlow for node positions
+**What:** A `MutableStateFlow<Map<String, Offset>>` for positions, separate from the main graph state.
+**Why bad:** Two StateFlows that must be kept in sync. Canvas would need to `combine()` them, creating complexity and potential for temporary inconsistency mid-frame.
+**Instead:** `x: Float, y: Float` stored directly on `WalkerNode`. Single source of truth. Layout computation updates nodes via `_graphState.value = state.copy(nodes = updatedNodes)`.
 
 ---
 
 ## Scalability Considerations
 
-The MVP architecture is intentionally simple — it does not need to scale beyond one active bridge computation at a time. P1 additions (Bridge History, Graph Queue) would require:
-
-- **Bridge History:** Extend `Room` with a `BridgeHistoryEntity` table. `BridgeViewModel` writes path + playlist after successful build. Separate `BridgeHistoryViewModel` for the history screen.
-- **Graph Queue (P1):** The `BridgeWebViewManager` WebView stays alive as the user walks the graph. The JS bridge gains additional methods (`queueArtists`, `autoBridge`). `BridgeViewModel` gains staging state. This is additive — no structural rework.
-- **Native Kotlin port (post-P1):** The `BridgePlaylistBuilder` and `BridgeViewModel` interfaces remain unchanged. The WebView is replaced by a Kotlin coroutine calling a `BridgeCrawler` class. The JS bridge object becomes dead code and is removed. `BridgeScreen` loses `BridgeWebViewManager` and gains a Kotlin progress indicator.
+| Concern | At Path Walker scale (50-150 nodes) | Threshold where it matters |
+|---------|-------------------------------------|---------------------------|
+| Hyperbolic layout CPU | Negligible — pure math, <1ms on any device | >500 nodes |
+| `List<WalkerNode>.copy()` | Negligible | >500 nodes |
+| Canvas hit-testing (O(n) per touch) | Fine for 150 nodes | >1000 nodes |
+| Room history queries | Negligible — few hundred rows | >10,000 rows |
+| `KotlinBridgeCache` semaphore contention | Shared with `BridgeAlgorithm` — possible contention during simultaneous bridge search + walker expansion; existing semaphore(8) handles this | Already handled by existing semaphore |
 
 ---
 
 ## Sources
 
-- [Android Developer Docs — JS bridge (`addWebMessageListener` vs `addJavascriptInterface`)](https://developer.android.com/develop/ui/views/layout/webapps/native-api-access-jsbridge) — HIGH confidence
-- [Android Developer Docs — WebViewAssetLoader for local content](https://developer.android.com/reference/androidx/webkit/WebViewAssetLoader) — HIGH confidence
-- [Android Developer Docs — Media3 playlist management](https://developer.android.com/media/media3/exoplayer/playlists) — HIGH confidence
-- [Android Developer Docs — StateFlow and SharedFlow](https://developer.android.com/kotlin/flow/stateflow-and-sharedflow) — HIGH confidence
-- [Android Developer Docs — Manage WebView state in Compose](https://developer.android.com/develop/ui/compose/quick-guides/content/manage-webview-state) — HIGH confidence
-- Existing codebase: `SpotifyLoginScreen.kt` (WebView + `AndroidView` pattern), `Queue.kt` + `ListQueue.kt` (queue abstraction), `PlayerConnection.playQueue()`, `YouTube.search()` — HIGH confidence (direct code inspection)
+All findings are from direct code inspection. Confidence: HIGH throughout.
+
+| File | Key findings extracted |
+|------|----------------------|
+| `BridgeViewModel.kt` | ViewModel size (789 lines), PlayerConnection pass-through pattern, `buildPlaylistProgressive()` flow |
+| `BridgeScreen.kt` | Existing composable structure, no mode toggle yet, `hiltViewModel()` usage |
+| `PathSheet.kt` | `HorizontalPathStrip` full signature, `PathNodeRow` reusability, `PathSheet` is a bottom-sheet wrapper |
+| `KotlinBridgeCache.kt` | `init{}` purge behavior — critical for history table isolation decision |
+| `DatabaseDao.kt` | Bridge cache methods at 1750-1769 — all new methods append to end of file |
+| `BridgeSimilarArtistEntity.kt` / `BridgeArtistMetaEntity.kt` | Purgeable semantics confirmed |
+| `graphStore.ts` | Zustand state shape — mapped to Kotlin `StateFlow<PathWalkerGraphState>` |
+| `types.ts` | `NodeState`, `GraphNode`, `GraphLink` — mapped to Kotlin data classes |
+| `hyperbolicLayout.ts` | `computeHyperbolicLayout()` is pure, ~150 lines, safe to port; `computeGeodesicArc()` is O(1), safe in DrawScope |
+| `crawl.ts` | BFS streaming pattern — basis for `stepTo()` FALA expansion model |

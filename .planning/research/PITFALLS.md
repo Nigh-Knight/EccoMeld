@@ -1,115 +1,266 @@
 # Domain Pitfalls
 
-**Domain:** Android music discovery app with WebView-embedded Next.js bridge algorithm
-**Researched:** 2026-04-03
-**Confidence:** MEDIUM-HIGH (most pitfalls verified against official docs or multiple sources)
+**Domain:** Adding Path Walker with hyperbolic graph visualization to existing Kotlin/Compose Android music app
+**Researched:** 2026-04-05
+**Confidence:** HIGH for Compose/Android-specific items (official docs verified); MEDIUM for hyperbolic math (arxiv + source code analysis); MEDIUM for Last.fm behavior (real-world issue threads)
+
+---
+
+## Scope Note
+
+This document supersedes the v1.0 WebView pitfalls file. The v2.0 milestone ports the
+EccoPath `hyperbolicLayout.ts` + `ForceGraph.tsx` Canvas rendering to Jetpack Compose
+Canvas and adds a Path Walker mode on top of the existing native Kotlin bridge algorithm.
+The critical risks here are specific to that porting work and its integration with the
+existing `BridgeViewModel`, `MusicService`, and `KotlinBridgeCache` stack.
 
 ---
 
 ## Critical Pitfalls
 
-Mistakes that cause rewrites, data loss, or fundamentally broken features.
+Mistakes that cause rewrites, broken interactions, or unacceptable performance.
 
 ---
 
-### Pitfall 1: IndexedDB Silently Fails Under `file://` Origin
+### Pitfall 1: Compose Canvas `drawScope` State Reads Trigger Full Canvas Redraws
 
-**What goes wrong:** EccoPath relies on IndexedDB as its L2 cache for Last.fm API responses. Loading the bundled Next.js assets directly via `file:///android_asset/...` URLs causes IndexedDB to fail silently or throw `DOMException: The user denied permission to access the database`. The Same-Origin policy treats each `file://` path as a unique origin, so persistent storage is either denied or scoped incorrectly — meaning the cache is empty on every bridge run, which hammers the Last.fm API on every use.
+**What goes wrong:** Every read of a `State<T>` or `StateFlow` value inside a `Canvas {
+}` block registers that state as an observer of the entire draw phase for that composable.
+When the graph has 100+ nodes and any observed state changes — even a single node's
+position update — Compose invalidates and redraws the entire canvas on every frame. This
+is catastrophic for Path Walker where node positions, playback state, loading spinners,
+and expansion animations all change at different cadences.
 
-**Why it happens:** Android WebView treats `file://` URLs as having a null origin. IndexedDB requires a stable, same-origin context to persist. This is a known WebView limitation documented in Chrome's WebView source and multiple Capacitor/Cordova issue threads.
+The specific failure mode is: you add a `MutableStateFlow<Long>` for the animation clock
+(updated via `withFrameMillis` at 60fps) to drive pulsing rings on frontier nodes. Because
+this clock is read inside the `Canvas { }` block, every frame redraws all 100+ nodes and
+all geodesic arc links — roughly 200+ `drawPath` calls per frame.
 
-**Consequences:** Every bridge computation starts cold with zero cached data. At ~50 API calls per bridge and Last.fm's 5 req/sec limit, this means a 10-15 second minimum wait every run. The cache — EccoPath's primary mechanism for making subsequent bridges fast — is completely bypassed.
+**Why it happens:** Compose's phase model separates composition, layout, and drawing. A
+state read in the draw phase (inside `Canvas`, `drawBehind`, `drawWithContent`) only
+triggers a redraw, not recomposition — this is actually the right behavior. The problem is
+that `Canvas` in Compose is a single, monolithic draw scope: there is no sub-canvas
+invalidation. Anything that changes causes everything to redraw.
 
-**Prevention:** Use `WebViewAssetLoader` (AndroidX Webkit) to serve the bundled assets over a virtual `https://appassets.androidplatform.net/` origin instead of `file://`. This makes IndexedDB work correctly because the content has a stable HTTPS origin. The EccoPath static export must be configured so all asset paths are relative or match this base URL.
-
-**Warning signs:** Bridge computation takes the same 10-15 seconds every run with no improvement after repeated use of the same artists. WebView console logs show IndexedDB open failures.
-
-**Phase:** Must be addressed in the WebView integration phase (before any bridge testing).
-
----
-
-### Pitfall 2: `addJavascriptInterface` Methods Run on a Private Background Thread
-
-**What goes wrong:** When JavaScript calls a method on the Kotlin object exposed via `addJavascriptInterface` (e.g., `MeldBridge.createPlaylist(json)`), that method executes on a private WebView background thread — not the main thread. If the Kotlin implementation directly touches ExoPlayer, updates Compose state, or posts to any UI-related component, it will crash or silently corrupt state.
-
-**Why it happens:** This is documented behavior in the Android WebView Java bridge: "The system calls methods on a background thread, requiring careful synchronization on the Kotlin side." The JS-to-Kotlin call is synchronous from JS's perspective but arrives on a non-main thread.
-
-**Consequences:** Crash (`CalledFromWrongThreadException`) or silent state corruption when the bridge callback tries to feed the ExoPlayer queue. Given that `MusicService.kt` already has extensive `runBlocking` usage (a known issue in CONCERNS.md), a naive bridge implementation could cause deadlocks.
-
-**Prevention:** In every `@JavascriptInterface` method, immediately dispatch work to the main thread via `Handler(Looper.getMainLooper()).post { }` or a coroutine scope bound to the main dispatcher. Never call ExoPlayer or update Compose state directly in the bridge method body. Keep bridge methods thin: receive JSON, validate, dispatch, return.
-
-**Warning signs:** `CalledFromWrongThreadException` in logcat. Intermittent crashes on bridge completion that don't reproduce in every run.
-
-**Phase:** Must be baked into the initial bridge interface implementation. Retrofitting thread safety is painful.
-
----
-
-### Pitfall 3: Next.js Static Export Produces Absolute `/_next/` Paths That Break in WebView
-
-**What goes wrong:** By default, `next build` with `output: 'export'` generates HTML that references `/_next/static/...` chunk paths. When loaded from `WebViewAssetLoader` at `https://appassets.androidplatform.net/`, these absolute paths resolve correctly only if the asset loader is configured to intercept the `/_next/` path prefix. If not configured, all JS chunks 404 and the app renders blank.
-
-A related issue: Next.js static exports add `crossorigin=""` attributes to generated `<script>` and `<link>` tags (a known bug reported in next.js issue #61210), which forces CORS preflight checks. In a WebView with no actual server, these checks can silently block asset loading.
-
-**Why it happens:** Next.js assumes a web server context. It does not know it will be loaded from a local virtual origin inside a WebView.
-
-**Consequences:** Blank WebView with no error surfaced in the app. The bridge never loads.
+**Consequences:** Dropped frames (below 60fps) with 50+ nodes. On mid-range devices
+(which are the EccoMeld target given APK sideloading), the Canvas may run at 20-30fps
+during active expansion, making the graph feel janky precisely when it needs to feel alive.
 
 **Prevention:**
-1. Set `basePath` in `next.config.js` to match the WebViewAssetLoader path prefix, or ensure the loader handles all paths the exported build references.
-2. Strip or patch the `crossorigin` attributes post-build, or configure the WebViewAssetLoader to serve with permissive CORS headers.
-3. Build and test the static export inside a minimal Android WebView harness before integrating into EccoMeld proper.
+1. Keep the animation clock state (`withFrameMillis`) local to the Canvas draw scope using
+   `produceState` or `LaunchedEffect` that writes to a `State<Long>` read only inside the
+   `Canvas` block. This correctly restricts invalidation to the draw phase only.
+2. Cache `Path` objects for geodesic arcs using `remember { }` keyed on node ID pairs.
+   The `computeGeodesicArc` circumcircle calculation is not cheap — pre-compute all arcs
+   when the graph changes, store as `Path` objects, and replay them in the draw loop.
+3. Use `drawWithCache` modifier to cache static graph elements (explored/inactive nodes)
+   into an off-screen bitmap. Only redraw the "live" layer (frontier nodes, active path,
+   loading spinners) per frame.
+4. Place the animation clock read in a `derivedStateOf` that only fires when the value
+   changes by more than one frame threshold, not on every millisecond tick.
 
-**Warning signs:** WebView shows blank white screen. Chrome Remote Debugging shows 404s for `/_next/static/chunks/*.js`.
+**Warning signs:** Systrace or Android Studio Layout Inspector shows the `Canvas` composable
+invalidating every frame even when no user interaction is happening. Frame render time
+exceeds 16ms.
 
-**Phase:** Must be validated in a standalone spike before the main WebView integration phase.
-
----
-
-### Pitfall 4: Last.fm Rate Limit Explosion from Beam Search Fanout
-
-**What goes wrong:** The beam search in `bridgeCrawl.ts` fetches up to 100 similar artists per node, then fetches `getArtistInfo` for each candidate to get tags. The code comment documents ~82 API calls in a worst-case search. EccoPath's `TokenBucket` rate limiter caps at ~3.3 req/sec. In a mobile context where the bridge is triggered interactively and potentially run multiple times in quick succession (e.g., "Random Bridge" button spammed), the rate limiter queue builds up across runs.
-
-Last.fm returns error code 29 (Rate Limit Exceeded) when a single API key exceeds ~5 req/sec averaged over 5 minutes. A single bridge run is within limits. Two bridge runs overlapping are not.
-
-**Why it happens:** The rate limiter is a single `TokenBucket` instance in the web app context, shared across a single page load. When the WebView is reloaded or a new bridge starts before the previous one completes, a second rate limiter instance may spin up — not sharing state with the first.
-
-**Consequences:** Last.fm returns error 29. The bridge crawl fails mid-search. The user sees a failed bridge with no clear error message.
-
-**Prevention:**
-1. Expose a `MeldBridge.cancelBridge()` JS interface method. Always call it before starting a new bridge to allow the current crawl to abort and drain the rate limiter queue.
-2. Disable the "Random Bridge" button and bridge submit until the current bridge completes.
-3. Add exponential backoff on Last.fm error 29 responses (already partially handled by the rate limiter, but needs explicit retry logic on 429/error-29 responses).
-4. Consider caching bridge results in the Kotlin/Room layer so repeat runs of the same artist pair skip the API entirely.
-
-**Warning signs:** Bridge fails after a few seconds when user triggers it a second time quickly. Last.fm error code 29 in WebView console logs.
-
-**Phase:** Rate limit resilience must be addressed before the "Random Bridge" button is implemented.
+**Phase:** Must be addressed at the start of the Canvas rendering phase, before writing
+any animation code. The architecture (cached paths vs live layer) must be decided first.
 
 ---
 
-### Pitfall 5: YT Music Fuzzy Match Returns Wrong Artist's Track
+### Pitfall 2: Touch Hit Testing Uses Screen Coordinates But Canvas Draws in Transformed Space
 
-**What goes wrong:** The fuzzy match for bridge artist tracks (artist name + track title → YT Music video ID) is vulnerable to disambiguation failures — especially for:
-- Artists with common names (e.g., "The XX", "Joy", "Pain")
-- Non-English artist names where transliteration differs
-- Niche/underground artists whose YT Music presence is sparse (fan uploads, wrong metadata)
-- Tracks with generic titles ("Intro", "Outro", "Untitled") that match many artists
+**What goes wrong:** The graph supports pan and zoom via `Modifier.transformable`. When
+the user has zoomed in 3x and panned the disk to the right, a node that visually appears
+at position (400, 300) on screen is stored in graph state at its pre-transform position
+(133, 100). A naive `pointerInput` hit test that computes distance from `offset.x` to
+`node.x` misses every node because it is comparing screen coordinates against canvas
+coordinates.
 
-A match with wrong artist plays the wrong song, which breaks the genre-transition the bridge was designed to create. This is worse than a skip — it actively misleads the user.
+The EccoPath `ForceGraph.tsx` handles this by calling `fg.screen2GraphCoords(canvasX,
+canvasY)` — a method on the `react-force-graph-2d` library's ref. In Compose Canvas,
+there is no such helper. The developer must manually invert the transform matrix.
 
-**Why it happens:** YT Music search returns results by relevance + popularity. A niche bridge artist's track may rank below a popular artist with a similar name or similar track title. Pure Levenshtein/fuzzy score does not penalize artist mismatch sufficiently.
+**Why it happens:** `Modifier.transformable` mutates a `TransformableState` (scale,
+offset, rotation). The `Canvas` block then applies `scale(state.scale)` +
+`translate(state.offset)` before drawing nodes. The `pointerInput` modifier receives raw
+touch coordinates in the composable's local layout space, not in the post-transform canvas
+space.
 
-**Consequences:** Bridge playlist includes tracks from wrong artists. Genre transitions are broken. User trust erodes. Silent wrong matches are harder to detect than silence.
+**Consequences:** Tapping a node does nothing. Tapping empty space accidentally triggers
+a node. On a zoomed-in disk with closely spaced frontier nodes, the hit test lands on the
+wrong node. This is the single most reported bug in custom Canvas graph libraries on
+Android.
 
 **Prevention:**
-1. Require that the matched result's artist name passes a high-confidence fuzzy match against the expected artist name (separate score from track title match). Reject if artist score is below threshold even if title matches.
-2. Add duration matching as a tiebreaker — if duration differs by more than 15 seconds from expected, prefer another result.
-3. For artists with very low Last.fm listener counts (< 5K), lower the acceptance threshold and prefer "skip silently" over a low-confidence match.
-4. Log all fuzzy match decisions during development to calibrate thresholds empirically.
+Convert touch coordinates to canvas space before hit testing:
+```kotlin
+// state = TransformableState(scale, offset)
+val canvasX = (touchOffset.x - state.offset.x) / state.scale
+val canvasY = (touchOffset.y - state.offset.y) / state.scale
+```
+Then compute Euclidean distance from `(canvasX, canvasY)` to each node's `(node.x, node.y)`.
 
-**Warning signs:** During testing, a bridge track plays a song by a completely different artist. Particularly common with niche artists at listener counts < 10K.
+The hit radius must also be adjusted for zoom:
+```kotlin
+// 22.dp minimum touch target (Android accessibility guideline = 44dp diameter)
+val minHitRadiusPx = with(density) { 22.dp.toPx() }
+val hitRadius = maxOf(nodeRadiusPx, minHitRadiusPx / state.scale)
+```
+Dividing by scale ensures the touch target is never smaller than 22dp regardless of zoom
+level — matching the `nodePointerAreaPaint` logic in `NodeRenderer.ts` (line 135:
+`Math.max(BASE_RADIUS * 1.5, 22 / globalScale)`).
 
-**Phase:** Fuzzy match logic must be validated during playlist builder implementation, with explicit test cases for disambiguation.
+**Warning signs:** Tapping nodes fails intermittently, especially after zooming in or
+panning. Accuracy degrades more at higher zoom levels.
+
+**Phase:** Implement in the same phase as pan/zoom gesture handling. Do not implement hit
+testing and pan/zoom in separate phases — they are mathematically coupled.
+
+---
+
+### Pitfall 3: Hyperbolic Layout Math Breaks Near the Disk Boundary
+
+**What goes wrong:** `computeHyperbolicLayout` maps tree levels to Poincaré disk positions
+using `tanh(hyperR / 2)`. As `hyperR` grows (deeper tree levels), `tanh` approaches 1.0
+asymptotically, mapping nodes to positions very close to the unit circle boundary. In
+`computeGeodesicArc`, the circumcircle calculation involves `D = 2*(p1x*(p2y-p3y) + ...)`.
+When two nodes are both near the boundary, `aDist = ax*ax + ay*ay` approaches 1.0, the
+inversion point `A* = A / aDist` explodes to a very large value, and the resulting
+circumcircle radius `r` becomes enormous — in some cases larger than `Float.MAX_VALUE`
+when accumulated through double arithmetic.
+
+The specific edge cases in the TypeScript source that can produce NaN or Infinity in
+Kotlin:
+
+1. `aDist < 0.001` check (line 198) uses `Double` in Kotlin. If `ax` and `ay` are both
+   `Float` from a node position, converting to `Double` via `toDouble()` accumulates
+   sufficient precision — but if kept as `Float`, the 0.001 threshold may pass when the
+   actual distance is still effectively zero (Float epsilon issues).
+2. `Math.abs(D) < 1e-8` collinearity check (line 214): in Kotlin `abs(D)` where `D` is
+   computed from `Float` positions has only ~7 decimal digits of precision. Points that
+   are mathematically collinear may not be detected as such, causing the arc to be drawn
+   with an astronomically large radius rather than falling back to a straight line.
+3. At `HYPER_STEP = 0.8` and 7 tree levels, the deepest node has `hyperR = 5.6`,
+   mapping to `eucR = tanh(2.8) * screenRadius ≈ 0.993 * screenRadius`. This places the
+   node 0.7% from the boundary. The inversion magnitude `1/aDist ≈ 143` — large but
+   representable. At 10 levels this exceeds the stable range.
+
+**Consequences:** Geodesic arcs render as giant circles cutting across the entire canvas,
+or as NaN positions that Compose Canvas ignores silently (draws nothing), leaving nodes
+visually disconnected. The `drawArc` call with an astronomically large radius also causes
+platform-level overdraw artifacts on some GPU drivers.
+
+**Prevention:**
+1. Use `Double` precision throughout the entire `computeGeodesicArc` port — never `Float`.
+   The TypeScript version uses JavaScript's `Number` (64-bit IEEE 754 double) implicitly.
+2. Add a boundary clamp after `hyperToEuclidean`: cap the result at 0.97 (not 1.0) to
+   keep all nodes 3% inside the boundary. This provides numeric headroom for inversion.
+3. Add an explicit arc radius sanity check: if `screenR > screenRadius * 50`, fall back
+   to a straight line. This catches the collinearity-miss case.
+4. Test with artists that generate 6+ hop paths (genre distance > 0.85 → `maxDepth = 7`)
+   to stress the deep-tree case.
+
+**Warning signs:** Geodesic arcs appear as full-screen circles. Some links between nodes
+are invisible while others look correct. The graph looks different on each render if NaN
+positions are involved.
+
+**Phase:** Port and validate `hyperbolicLayout.ts` in a standalone unit test before
+integrating with the Canvas composable. The math functions are pure — test them in
+isolation with known inputs.
+
+---
+
+### Pitfall 4: Recomposition Storm from Graph State + Playback State on the Same Screen
+
+**What goes wrong:** The Path Walker screen needs to observe at least four independent
+state streams simultaneously: graph node/link state (from a new `PathWalkerViewModel`),
+the active path state, playback state (which song is playing, from `PlayerConnection` via
+`LocalPlayerConnection`), and UI state (which node is selected, zoom level, tab toggle).
+
+Each of these is a `StateFlow` collected via `collectAsState()`. In Compose, each
+`collectAsState()` call registers the composable as a subscriber. If all four are collected
+at the top-level `PathWalkerScreen` composable, any change in any stream causes the entire
+screen to recompose — including the `Canvas` composable — even if only the "now playing
+artist" changed.
+
+The existing `BridgeScreen.kt` already demonstrates this pattern with `uiState`,
+`fromQuery`, `toQuery`, `bridgeCards`, `seedSuggestions`, `isLoadingSeeds`, `isBuilding`,
+`showQueueDialog`, and `mediaMetadata` — nine `collectAsState()` calls at the root level.
+Adding graph state here makes it worse.
+
+**Consequences:** Playback position changes (which fire every second from ExoPlayer's
+`MediaMetadata` updates) cause the entire Canvas to recompose at 1Hz, on top of the
+animation-driven invalidation. Composition takes CPU time even though the draw phase is
+the bottleneck.
+
+**Prevention:**
+1. Collect playback state (`mediaMetadata`, `nowPlaying`) in a **separate child composable**
+   below the Canvas, not at the screen root. Playback state changes then only recompose
+   that child, not the Canvas.
+2. Use `derivedStateOf` for any value derived from multiple sources. For example:
+   ```kotlin
+   val nowPlayingNodeId by remember {
+       derivedStateOf { graphNodes.value.find { it.name == nowPlayingArtist.value }?.id }
+   }
+   ```
+   This only recomputes when both the graph and the artist name actually change.
+3. Mark all graph state data classes `@Immutable` and `@Stable`. Compose's compiler plugin
+   skips recomposition of composables whose stable parameters have not changed.
+4. Split the Path Walker screen into: `PathWalkerCanvas` (only observes graph + transform
+   state), `PathPanel` (observes path + playback state), `TabBar` (observes UI toggle state).
+   Each composable only recomposes when its own slice of state changes.
+
+**Warning signs:** Android Studio's recomposition counter shows the `Canvas` composable
+recomposing at 1Hz even when the user is not touching the screen. CPU usage stays elevated
+while music plays with graph static.
+
+**Phase:** Must be addressed in ViewModel and screen architecture design before writing
+any Canvas code. The state split decision is load-bearing.
+
+---
+
+### Pitfall 5: Last.fm Burst Rate Limiting During Rapid FALA Node Expansion
+
+**What goes wrong:** Path Walker's core interaction is "tap a frontier node → expand to 5
+children → tap one of those → expand to 5 more." Each expansion calls
+`LastFM.getSimilarArtists()` once. If the user taps rapidly through 3-4 nodes before the
+first expansion completes, the app fires multiple simultaneous `getSimilarArtists` calls,
+potentially on top of any ongoing `KotlinBridgeCache` prefetch from the seed suggestions
+loaded on tab entry.
+
+`KotlinBridgeCache` uses a `Semaphore(8)` for concurrency control — this allows up to 8
+simultaneous network calls. But Last.fm's free-tier limit is 5 req/sec averaged over 5
+minutes. A burst of 8 simultaneous calls each starting at the same moment will hit the
+rate limit on the first few that complete, since all responses arrive within ~200ms of
+each other.
+
+The EccoPath `ForceGraph.tsx` `expandNode()` function (line 198-268) handles this by
+setting node state to `'loading'` and disabling re-expansion while loading. In Kotlin, if
+the node state is not locked against re-tapping during expansion, rapid taps on the same
+node can fire multiple `getSimilarArtists` calls for the same artist.
+
+**Consequences:** Last.fm returns HTTP 429 / error code 29. The expansion silently fails.
+The node stays in `loading` state with no recovery path. The user sees a spinner that never
+resolves.
+
+**Prevention:**
+1. Add a `Set<String>` of in-flight artist expansions to the ViewModel. Before firing a
+   `getSimilarArtists` call, check if the artist is already in-flight. If so, drop the
+   tap silently.
+2. Reduce the semaphore permits for Path Walker expansion specifically to 3 (not 8).
+   Path Walker expansions are user-triggered, not algorithm-internal — they should be
+   more conservative than the beam search.
+3. On 429 / error 29 response, reset the node state to `frontier` (not stuck in
+   `loading`) and show a transient snackbar: "Too many requests — try again in a moment."
+4. Implement exponential backoff with jitter in the LastFM client for error-29 responses.
+   Start at 1 second, double on each retry, cap at 30 seconds, max 3 retries.
+
+**Warning signs:** Nodes get stuck in the loading state when the user taps quickly.
+Logcat shows Last.fm error 29. Recovery requires restarting the Path Walker session.
+
+**Phase:** Address in the Path Walker ViewModel implementation, before any UI wiring.
+The in-flight guard and backoff must exist before the tap handler is connected.
 
 ---
 
@@ -117,105 +268,297 @@ A match with wrong artist plays the wrong song, which breaks the genre-transitio
 
 ---
 
-### Pitfall 6: WebView Memory Not Reclaimed When Bridge Tab Is Navigated Away
+### Pitfall 6: Artist Profile Images Cannot Be Loaded Inside `Canvas { }` Directly
 
-**What goes wrong:** In a Compose-based single-activity app, the Bridge screen hosts a WebView inside `AndroidView`. When the user navigates to another bottom nav tab, the Compose composition may or may not destroy the WebView — depending on how navigation is implemented. If the WebView survives in the backstack with its JS VM running, it continues consuming memory and CPU. EccoPath's beam search, if still in progress, continues firing Last.fm API calls in the background.
+**What goes wrong:** The EccoPath `NodeRenderer.ts` draws nodes as colored circles with
+text labels. EccoMeld's richer design may want to show circular artist thumbnail images
+inside each node (similar to Spotify's graph views). The naive implementation loads images
+via Coil inside the `Canvas` block — but `Canvas` in Compose is a `DrawScope`, not a
+composable scope. You cannot call `AsyncImage()` or `rememberAsyncImagePainter()` inside
+`Canvas { }`. Attempting to do so causes a compile error or runtime crash
+(`CompositionLocal not found`).
 
-**Why it happens:** `AndroidView` does not automatically pool or destroy wrapped Views when a composable leaves the composition. WebView holds a reference to the Activity context (not Application context), which prevents garbage collection of the entire Activity.
+**Why it happens:** Compose's `Canvas` composable uses `DrawScope` which has no access
+to `CompositionLocal` values (including Coil's image loader). Image loading requires a
+composable context.
 
-**Consequences:** Memory pressure causes system to kill the app's process. Background API calls from an abandoned bridge run consume the Last.fm rate limit for the next run. OOM crash if user navigates away mid-bridge on a low-memory device.
+**Consequences:** Artist images cannot be drawn inside Canvas nodes without a workaround.
+Developers who attempt it get cryptic compiler errors and may restructure the composable
+tree incorrectly.
 
 **Prevention:**
-1. Store the WebView in a `rememberSaveable` or a ViewModel scoped to the Bridge tab, not recreated on recomposition.
-2. In `AndroidView`'s `onRelease` callback, call `webView.stopLoading()`, `webView.loadUrl("about:blank")`, then `webView.destroy()`.
-3. Expose a `cancelBridge()` JS interface that the Kotlin side calls before destroying the WebView.
-4. Use `DisposableEffect` or `LifecycleObserver` to hook into `ON_PAUSE` / `ON_STOP` to pause the WebView and on `ON_DESTROY` to clean it up.
+Load images outside the Canvas, store as `ImageBitmap`, then draw inside Canvas:
+```kotlin
+// Outside Canvas, in composable scope:
+val bitmaps = nodes.associate { node ->
+    node.id to rememberAsyncImagePainter(node.imageUrl)
+        .state
+        .painter
+        ?.let { painter ->
+            // Convert Painter to ImageBitmap for use in DrawScope
+            val bitmap = ImageBitmap(nodeSize, nodeSize)
+            val canvas = androidx.compose.ui.graphics.Canvas(bitmap)
+            with(DrawScope equivalent) { painter.draw(...) }
+            bitmap
+        }
+}
+// Inside Canvas:
+bitmaps[node.id]?.let { drawImage(it, ...) }
+```
+A cleaner pattern: use `SubcomposeLayout` to pre-render node image composables into
+`Painter` objects, then use `Painter.draw()` inside `DrawScope`. Alternatively, keep
+nodes as text-only circles (matching the EccoPath design) and defer image thumbnails to
+a future milestone.
 
-**Warning signs:** Memory usage climbs steadily after several bridge runs. LeakCanary reports WebView context leaks referencing the Bridge Composable.
+**Warning signs:** Compiler error "CompositionLocal ... not found" inside the Canvas block.
+Runtime crash with "No NodeCoordinator" when trying to call composable functions from
+DrawScope.
 
-**Phase:** Address in WebView lifecycle management subtask of the bridge integration phase.
+**Phase:** Decide at the start of the Canvas rendering phase whether nodes show images
+or text-only. If images are wanted, design the loading pipeline before writing Canvas code.
 
 ---
 
-### Pitfall 7: ExoPlayer Queue Manipulation Must Happen on the Main Thread, From the Correct Service Context
+### Pitfall 7: `ShadowBlur` (Glow Effects) Has No Direct Equivalent in Compose Canvas
 
-**What goes wrong:** The bridge callback arrives from the WebView background thread. The Kotlin bridge handler must add ~30-45 tracks to the existing ExoPlayer queue in `MusicService`. If the bridge handler calls ExoPlayer methods from the wrong thread or the wrong coroutine context, it either crashes or silently does nothing.
+**What goes wrong:** `NodeRenderer.ts` uses `ctx.shadowColor` + `ctx.shadowBlur` to
+produce the glow effects on seed, active, and current nodes (lines 57-63). Compose's
+`DrawScope` has no `shadowBlur` API. Developers who look for `drawCircle(shadow=...)`
+will find nothing and assume glow is not possible.
 
-An additional risk: if the user is already playing music when the bridge completes, calling `setMediaItems()` instead of `addMediaItems()` would wipe the current queue. The correct call is `addMediaItems(currentQueueSize, bridgeTracks)` or `setMediaItems(bridgeTracks, startIndex=0)` depending on desired behavior (replace vs append).
+The naive workaround — applying `Modifier.shadow()` to a composable node outside the
+Canvas — breaks the single-Canvas architecture. Each node would become a separate
+composable, eliminating the performance benefit of batch Canvas drawing.
 
-**Why it happens:** ExoPlayer's `Player` interface is not thread-safe in the general case, though most methods do have safe variants. `MusicService.kt` is already a 3,460-line god-object — adding queue manipulation logic inline will make it harder to reason about correct threading.
+**Why it happens:** Compose Canvas's `DrawScope` maps to Android's `Canvas` API, which
+does not have built-in blur. Shadow blur requires `Paint.maskFilter = BlurMaskFilter`.
+
+**Consequences:** Glow effects are absent from the first implementation. Developers spend
+time investigating non-existent APIs before finding the correct approach.
 
 **Prevention:**
-1. Create a dedicated `BridgeQueueHandler` class responsible only for receiving a bridge path and enqueuing tracks. This isolates the threading logic.
-2. All ExoPlayer calls within `BridgeQueueHandler` must be dispatched to `Dispatchers.Main`.
-3. Use `addMediaItems()` not `setMediaItems()` unless explicitly implementing "replace queue" behavior.
-4. Test both the "queue is empty" path and the "queue is playing" path explicitly.
+Use `Paint.maskFilter` with `BlurMaskFilter` inside the Canvas:
+```kotlin
+val glowPaint = remember {
+    Paint().apply {
+        asFrameworkPaint().apply {
+            isAntiAlias = true
+            maskFilter = BlurMaskFilter(40f, BlurMaskFilter.Blur.NORMAL)
+        }
+    }
+}
+// In draw scope:
+drawIntoCanvas { canvas ->
+    glowPaint.color = Color(0x26FF8F7B) // seed glow color at 15% alpha
+    canvas.drawCircle(Offset(x, y), radius + 10f, glowPaint)
+}
+```
+Note: `BlurMaskFilter` is expensive per draw call. Pre-create `Paint` objects via
+`remember { }` — never allocate them inside the draw loop. Also be aware that
+`BlurMaskFilter` may not render on hardware-accelerated canvases on some API levels.
+Test on API 26 (minimum SDK) explicitly.
 
-**Warning signs:** Playlist appears to not load after bridge completion. Current track is interrupted unexpectedly when bridge finishes.
+**Warning signs:** No glow visible on any nodes. Build succeeds but visual output differs
+from the EccoPath web design. Developers searching `DrawScope` API for `shadowBlur`.
 
-**Phase:** Address during playlist builder and queue integration phase.
+**Phase:** Address in the Canvas rendering phase, in the same pass as node drawing.
+Do not defer glow to a "polish" phase — it affects the Paint object allocation design.
 
 ---
 
-### Pitfall 8: Spotify TOTP Gist Is a Single Point of Failure for Auth
+### Pitfall 8: Panning the Graph Scrolls the Parent Screen Instead
 
-**What goes wrong:** `SpotifyAuth.kt` fetches TOTP secrets from an external GitHub Gist (`https://api.github.com/gists/22ed9c6ba463899e933427f7de1f0eef`). The Spotify "Random Bridge" and liked-artists features both depend on this auth working. If the Gist is deleted, made private, or the content format changes, all Spotify features break silently or with a non-obvious error.
+**What goes wrong:** The Path Walker canvas lives inside the Bridge tab screen, which is
+currently a `verticalScroll(rememberScrollState())` column (line 373 of `BridgeScreen.kt`).
+A drag gesture on the Canvas composable will be intercepted by the parent scroll container
+unless gesture ownership is explicitly claimed.
 
-This is a pre-existing fragility documented in CONCERNS.md, but the bridge milestone amplifies it: "Random Bridge" and "Bridge from your taste" are P0 MVP features that directly depend on Spotify liked artists. A broken Gist breaks two of the most visible MVP features.
+`Modifier.transformable` uses `awaitPointerEventScope` internally. When both the parent
+`verticalScroll` and the child Canvas `transformable` are in the gesture hierarchy,
+Compose's gesture disambiguation runs. The parent scroll wins by default for vertical
+drags — panning the graph up/down scrolls the screen instead of panning the canvas.
 
-**Why it happens:** The current implementation relies on a community-maintained reverse-engineered TOTP secret. It is not under the project's control.
+**Why it happens:** Compose's pointer input system resolves gesture conflicts via a
+"first claimer wins" model within the same pointer input chain. `verticalScroll` claims
+vertical drags eagerly.
 
-**Consequences:** MVP features that require Spotify fail for all users if the Gist becomes unavailable.
+**Consequences:** The canvas is not pannable vertically. Users can pan horizontally but
+the screen scrolls when panning up/down. The graph feels broken.
 
 **Prevention:**
-1. Mirror the Gist content to a file within the repository or a controlled endpoint before shipping MVP.
-2. Cache the last successfully fetched TOTP secret in the app (encrypted DataStore) and use it as fallback.
-3. Add explicit error handling on the Gist fetch that surfaces a clear message: "Spotify connection unavailable — bridge from your taste is disabled, but you can still enter artists manually."
-4. Design "Random Bridge" to work without Spotify as a fallback (pick from a small hardcoded set of genre-diverse seed pairs).
+1. Place the Canvas in a dedicated, full-screen composable that fills the tab area, not
+   inside the scrollable column. The Bridge tab needs a two-mode layout: scroll mode (for
+   the current bridge card list) and graph mode (for Path Walker). These should be
+   rendered in separate branches, not nested.
+2. Use `Modifier.nestedScroll` with a `NestedScrollConnection` that consumes all scroll
+   events when the Canvas is in graph mode, preventing them from reaching the parent.
+3. As a simpler alternative: the Canvas can use `pointerInput(Unit) { detectDragGestures
+   { ... } }` with `consumeAllChanges()` to block propagation to parents.
 
-**Warning signs:** Spotify features stop working and the error traces back to a 404 on the Gist URL.
+**Warning signs:** Vertical pan of the graph scrolls the Bridge tab's card list. The
+canvas can be zoomed but not panned vertically. `onGloballyPositioned` shows the Canvas
+receiving events but parent scroll also fires.
 
-**Phase:** Mitigation must be in place before shipping any MVP feature that depends on Spotify liked artists.
+**Phase:** Must be addressed in the screen layout architecture phase, before integrating
+the Canvas. The tab mode split (bridge list vs graph) is a foundational layout decision.
 
 ---
 
-### Pitfall 9: WebView Cold Start Latency Makes Bridge Feel Slow
+### Pitfall 9: Growing Graph State in ViewModel Causes Unbounded Memory Growth
 
-**What goes wrong:** Android WebView initialization is not free. The first time a WebView is instantiated in a process, it loads the Chromium renderer. On mid-range devices, this can take 300-800ms before any URL is loaded. Add Next.js bundle parse time (the static export JS chunks), and the Bridge tab may feel unresponsive for 1-3 seconds on first open.
+**What goes wrong:** Each FALA expansion adds 5 nodes and 5 links to the graph state.
+After 20 expansions, the graph has 100+ nodes. The naive ViewModel implementation stores
+all nodes as a `List<GraphNode>` in a `MutableStateFlow`. Each update creates a new list
+copy (immutable state pattern), so the garbage collector sees the full list allocated and
+freed on every expansion. With node metadata (name, state, parentId, match score, image
+URL, bitmap thumbnail), each `GraphNode` is ~500 bytes of heap.
 
-If the WebView is destroyed and recreated each time the Bridge tab is visited (a common mistake in Compose + AndroidView integration), users experience this cold start repeatedly.
+More critically: if the Path Walker session is long (30+ expansions, 150+ nodes), the
+artist name strings, cached `ImageBitmap` objects, and `Path` objects for geodesic arcs
+accumulate. On a 512MB RAM device (still common for sideloaded APK users), OOM kills are
+possible.
 
-**Why it happens:** WebView is a separate browser engine process. Its initial load is expensive. Compose's AndroidView does not automatically preserve Views across navigation.
+**Why it happens:** Graph exploration is unbounded by design. EccoPath runs in a browser
+tab with V8's garbage collector. Android's Dalvik/ART has a smaller managed heap and
+more aggressive OOM kills, especially when audio playback (ExoPlayer) is running
+concurrently in `MusicService`.
+
+**Consequences:** App killed by OOM during an active Path Walker session. Memory pressure
+causes ExoPlayer to lose its audio buffer, interrupting playback. `onLowMemory()` is
+called but no cleanup happens because graph state is in a ViewModel, not a
+system-visible cache.
 
 **Prevention:**
-1. Instantiate the WebView eagerly in the background when the app starts, before the user taps the Bridge tab.
-2. Keep a single WebView instance alive for the app session — do not destroy and recreate it on tab navigation.
-3. Show a "Loading bridge engine..." skeleton state when the WebView is initializing, so the delay feels intentional.
-4. Minimize the Next.js bundle size: strip out all EccoPath UI components (graph visualization, Poincaré disk layout) from the bundled build since only the algorithm (`bridgeCrawl.ts` + `lastfm.ts`) is needed. The `hyperbolicLayout.ts` file is explicitly noted as not needed for MVP.
+1. Cap the in-memory graph at 200 nodes. When the limit is reached, prune nodes more
+   than 3 hops from the current node (they are off-screen in the hyperbolic layout
+   anyway). Store pruned nodes in Room with their position for potential re-expansion.
+2. Use weak references for `ImageBitmap` node thumbnails. The bitmap cache should be
+   bounded (e.g., `LruCache<String, ImageBitmap>(maxSize = 50)`), not a plain `Map`.
+3. On `ComponentActivity.onTrimMemory(TRIM_MEMORY_MODERATE)`, clear the thumbnail cache
+   and mark all non-current-path nodes as needing thumbnail reload.
+4. The `Path` object cache for geodesic arcs should be a `LinkedHashMap` with a max size,
+   evicting the oldest paths first (LRU pattern).
 
-**Warning signs:** Bridge tab has a 1-3 second white flash before anything appears. Users report the Bridge tab "freezing" on first tap.
+**Warning signs:** Memory usage reported in Android Studio grows monotonically during a
+Path Walker session. `GC_FOR_ALLOC` messages in logcat. App killed after 30+ node
+expansions on a low-RAM device.
 
-**Phase:** Address WebView pre-initialization in the Bridge tab setup phase. Bundle pruning should happen before the first APK build.
+**Phase:** Address in the Path Walker ViewModel design. The node cap and LRU caches must
+be designed upfront — they cannot be retrofitted cleanly after the state shape is fixed.
 
 ---
 
-### Pitfall 10: Database Migration Will Break If Bridge Tables Are Added Carelessly
+### Pitfall 10: `withFrameMillis` Animation Loop Conflicts with Coroutine Cancellation
 
-**What goes wrong:** The Room database is at schema version 36+ with `fallbackToDestructiveMigration(dropAllTables = true)`. Any new migration that has a bug silently wipes all user data — liked songs, playlists, bridge history — and replaces with an empty database. This is noted as a critical risk in CONCERNS.md.
+**What goes wrong:** The pulsing ring animation on `loading` and `current` state nodes
+(replicating `NodeRenderer.ts` lines 85-103) requires a continuous animation loop running
+at the display refresh rate. The standard pattern in Compose is:
 
-The bridge milestone will add at least one new table (bridge history for P1, but possibly track-match cache for P0). An incorrect migration drops everything.
+```kotlin
+LaunchedEffect(Unit) {
+    while (true) {
+        withFrameMillis { frameTime ->
+            animationClock.value = frameTime
+        }
+    }
+}
+```
 
-**Why it happens:** `dropAllTables = true` in the destructive migration config means Room nukes all tables if migration fails, rather than throwing an error. There are zero existing migration tests.
+This loop runs indefinitely in the `LaunchedEffect` coroutine. If the composable leaves
+composition (user switches tab), the coroutine is cancelled correctly. However, if the
+Path Walker is nested inside a `NavHost` route and the route is re-entered (back stack
+pop + push), the `LaunchedEffect` is restarted. If the old coroutine was not cancelled
+cleanly — for example, if `withFrameMillis` was inside a `try { } catch (e:
+CancellationException) { /* swallowed */ }` block — the old loop continues running as a
+zombie, driving two animation clock updates per frame. This doubles the Canvas redraw
+rate.
+
+**Why it happens:** `CancellationException` must not be swallowed in Kotlin coroutines.
+It is the mechanism by which structured concurrency cancels coroutines. Any `try/catch`
+that catches `Exception` or `Throwable` without rethrowing `CancellationException`
+prevents coroutine cancellation.
+
+**Consequences:** Two animation loops driving 120 Canvas redraws per second instead of 60.
+Frame drops visible to users. Battery drain. The issue is invisible in code review
+because the bug only appears after navigation.
 
 **Prevention:**
-1. Write a migration test for every schema change using Room's `MigrationTestHelper` before committing any migration.
-2. Bump the database version atomically: define the migration, write the test, and verify upgrade from version N-1 to N in the test before merging.
-3. For bridge track-match cache (if added to Room): consider using a separate database file entirely (`Room.databaseBuilder` with a different name) so a migration failure in the bridge tables cannot affect the main music library database.
-4. Set `fallbackToDestructiveMigration(dropAllTables = false)` once migration tests exist — this will at least preserve unaffected tables.
+1. Never catch `CancellationException` without rethrowing. Use `catch (e: Exception)` only
+   for specific, expected exceptions — not as a catch-all around animation loops.
+2. In the existing codebase, check `BridgeViewModel` and `MeldBridgeInterface` for any
+   `catch (e: Exception)` blocks that might swallow cancellation (these would also affect
+   the beam search coroutines).
+3. Prefer `InfiniteTransition` (Compose animation API) over manual `withFrameMillis` loops
+   for simple periodic animations like pulsing rings. `InfiniteTransition` is
+   automatically lifecycle-aware and does not require manual cancellation handling.
 
-**Warning signs:** App database appears empty after updating to a new build during development. All library data is gone.
+**Warning signs:** Frame rate climbs to 120fps in Systrace during a Path Walker session
+that has been navigated in and out. CPU usage is higher on the second visit to the tab
+than the first.
 
-**Phase:** Any phase that touches the Room schema must include a migration test as part of the definition of done.
+**Phase:** Address in Canvas animation implementation. Establish the `InfiniteTransition`
+vs `withFrameMillis` policy before writing any animation code.
+
+---
+
+### Pitfall 11: Zoom/Pan State Survives Navigation but Graph Position Feels Wrong on Re-entry
+
+**What goes wrong:** `TransformableState` (scale, offset) is typically held in a
+`rememberSaveable` or `remember` in the composable. When the user navigates from the Bridge
+tab to Home and back, if the state is `remember`-based, it is reset to the default
+(scale=1, offset=zero). The graph re-appears zoomed-out even if the user had zoomed into a
+specific area.
+
+Conversely, if state is in the ViewModel and survives navigation, the graph re-appears in
+the last-viewed transform. But if the user had panned the graph off-center and the ViewModel
+triggered a `zoomToFit` (like EccoPath's `graphRef.current?.zoomToFit(600, 60)` on node
+count changes), the ViewModel's stored transform is stale and the visible graph is
+off-screen.
+
+**Why it happens:** Pan/zoom state is inherently presentation-layer state (belongs in the
+composable) but also needs to survive tab navigation (which usually requires ViewModel
+storage). The two requirements conflict.
+
+**Prevention:**
+Store transform state in the ViewModel as simple `Float` + `Offset` values but reset them
+explicitly when the graph data changes significantly (e.g., when a new seed is selected).
+Provide a "re-center" button that snaps back to `scale=1, offset=center` to give users a
+recovery path. Implement auto-fit on first node expansion only (not on every expansion)
+to avoid fighting the user's manual pan.
+
+**Phase:** Address in Pan/zoom implementation. The reset policy must be explicitly
+decided — not left as undefined behavior.
+
+---
+
+### Pitfall 12: Integrating Path Walker Toggle with Existing Bridge Tab Breaks Existing Tests
+
+**What goes wrong:** The Bridge tab (from v1.0) has 9 UAT plans and a working UI with
+stacked bridge cards. Adding a mode toggle (Bridge mode vs Path Walker mode) changes the
+root structure of `BridgeScreen.kt`. The existing stacked card list and the new Canvas
+graph need to coexist in the same tab, controlled by a mode state. If implemented naively
+as an `if (mode == BRIDGE) { ... } else { ... }` at the screen root, both branches are
+composed but only one is visible — which means the Canvas composable draws invisible
+frames in the background.
+
+**Why it happens:** Compose's `if` branching removes composables from composition when
+the condition is false. However, if the developer uses `AnimatedVisibility` (for a
+fade transition between modes), both composables remain in composition simultaneously
+during the transition and after if `visible=false` composables are not exited.
+`AnimatedVisibility(visible = false)` keeps the composable in composition (for exit
+animations) — meaning the Canvas is drawing at 60fps while hidden.
+
+**Consequences:** Canvas draws 60fps to a composable that renders nothing visible.
+ExoPlayer + hidden Canvas + visible bridge list = three simultaneous CPU consumers.
+
+**Prevention:**
+Use `if (mode == PATHWALKER)` not `AnimatedVisibility` for the Canvas — hard-switch with
+no transition. Use `AnimatedVisibility` only for the tab bar toggle control itself, not
+the content it switches. Alternatively, use `AnimatedContent` with a `ContentTransform`
+that exits the old composable before entering the new one.
+
+**Phase:** Bridge tab mode architecture. Decide the switching mechanism before writing
+either the Canvas or the toggle UI.
 
 ---
 
@@ -223,43 +566,67 @@ The bridge milestone will add at least one new table (bridge history for P1, but
 
 ---
 
-### Pitfall 11: API Key Hard-Coded in EccoPath Source Is Now in an APK
+### Pitfall 13: `computeGeodesicArc` Returns `null` for Straight-Line Geodesics — Draw Path Must Handle Both
 
-**What goes wrong:** `lastfm.ts` contains a hard-coded Last.fm API key (`c02db6443f45b41cd57d8166c9f042c9`). This is common practice for open web apps where the key is visible in browser devtools anyway. However, bundling EccoPath into an APK means the key is extracted from the assets folder trivially with `apktool`. Anyone who decompiles the APK can extract and abuse the key — potentially exhausting its rate limit or getting it banned.
+**What goes wrong:** `computeGeodesicArc` returns `null` when two nodes are collinear
+through the disk center (the geodesic is a diameter). The TypeScript caller in
+`LinkRenderer.ts` handles this with a `if (arc) { ctx.arc(...) } else { ctx.moveTo/lineTo }`
+branch. In a Kotlin port, if the `null` return is not checked and `arc!!` is used, the
+app crashes on any link that passes through the center — which always includes the seed
+node's direct children.
 
-**Prevention:** This is a low-severity risk for a personal project distributed via GitHub sideload. Document it explicitly. As a mitigation, Last.fm API keys are free and project-specific — rotate the key and create a new one specifically for EccoMeld so abuse does not affect the web EccoPath app's key.
+**Prevention:** Pattern-match the return: `arc?.let { drawArc(...) } ?: drawLine(...)`.
+Unit test `computeGeodesicArc(0f, 0f, 100f, 0f, 300f)` — this should return null
+(seed-to-child link passes through origin).
 
-**Phase:** Before first public APK release.
-
----
-
-### Pitfall 12: `evaluateJavascript` Null Callbacks on Destroyed WebView
-
-**What goes wrong:** `WebView.evaluateJavascript(script, callback)` must be called on the UI thread. If called while the WebView is partially destroyed (e.g., during navigation away from the Bridge tab), the callback fires with `null` rather than throwing. If Kotlin code does not null-check the result, it will NPE.
-
-**Prevention:** Always null-check the `ValueCallback` result. Wrap all `evaluateJavascript` calls with a guard that checks if the WebView is still attached before calling.
-
-**Phase:** Bridge interface implementation phase.
+**Phase:** Geodesic arc port unit test. Do not merge without this specific test.
 
 ---
 
-### Pitfall 13: Next.js Image Optimization Breaks in Static Export
+### Pitfall 14: `ctx.letterSpacing` Canvas API Has No Kotlin/Android Equivalent
 
-**What goes wrong:** Next.js `<Image>` component requires a server for optimization and is not compatible with `output: 'export'` unless `images: { unoptimized: true }` is set in `next.config.js`. If EccoPath uses `<Image>` anywhere (e.g., artist images in the graph UI), the static export will fail to build or produce broken image references.
+**What goes wrong:** `NodeRenderer.ts` applies `ctx.letterSpacing = '-0.02em'` to the
+artist name label (line 114-115). This Canvas 2D API property is supported in Chromium
+but not available on Android's `Canvas` or Compose's `DrawScope`. Attempting to set it
+in Kotlin via `drawText` will not error but will silently have no effect. The label will
+render without the tracking adjustment, making it look slightly wider than the design.
 
-**Prevention:** Add `images: { unoptimized: true }` to `next.config.js` for the EccoPath build. Since only the bridge algorithm is used (not the graph UI), confirm which EccoPath components are actually bundled and strip or skip image-using components.
+**Prevention:** Use `TextLayoutResult` with `letterSpacing` set in `SpanStyle` when
+drawing text via `drawText(textLayoutResult, ...)`. This requires pre-computing the text
+layout outside the Canvas draw call:
+```kotlin
+val textMeasurer = rememberTextMeasurer()
+val textResult = remember(node.name) {
+    textMeasurer.measure(
+        AnnotatedString(node.name),
+        TextStyle(letterSpacing = (-0.02).em)
+    )
+}
+// In Canvas:
+drawText(textResult, topLeft = Offset(x - textResult.size.width / 2f, labelY))
+```
+Pre-compute and cache `TextLayoutResult` per node outside the draw loop — measuring text
+on every frame is expensive.
 
-**Phase:** Build configuration phase before first APK build.
+**Phase:** Node label rendering. A minor visual issue but foundational for the text
+drawing architecture.
 
 ---
 
-### Pitfall 14: `runBlocking` in MusicService + Bridge Callback = Potential Deadlock
+### Pitfall 15: Database Schema Must Be Extended for Path Walker Walk History
 
-**What goes wrong:** `MusicService.kt` already contains 6+ `runBlocking` calls. If the bridge callback (arriving on the WebView background thread) acquires any lock or coroutine scope that is also held by one of those `runBlocking` calls on the main thread, a deadlock is possible — the service hangs, playback stops, ANR follows.
+**What goes wrong:** Path Walker walk history (persisting explored nodes, current path,
+expansion tree) requires new Room tables. The existing database is at schema version 37
+(post v1.0 bridge tables). A new migration bump is required. The existing
+`fallbackToDestructiveMigration(dropAllTables = true)` means a bad migration drops all
+user data including the v1.0 bridge history tables.
 
-**Prevention:** Do not introduce any new `runBlocking` calls in bridge-related Kotlin code. The bridge handler should use `CoroutineScope(Dispatchers.Main).launch { }` or post to a Handler. Track the existing `runBlocking` locations in CONCERNS.md and avoid any code path that passes through them during bridge completion.
+**Prevention:** Follow the migration test protocol established in the v1.0 pitfalls:
+write a `MigrationTestHelper` test from version N-1 to N before merging. For Path Walker
+specifically, consider a separate database file (`pathwalker.db`) to isolate schema
+evolution from the main library database.
 
-**Phase:** Bridge-to-queue handoff implementation. Flag as a known risk in code review.
+**Phase:** Any phase that adds Path Walker persistence. Write the migration test first.
 
 ---
 
@@ -267,34 +634,37 @@ The bridge milestone will add at least one new table (bridge history for P1, but
 
 | Phase Topic | Likely Pitfall | Mitigation |
 |-------------|---------------|------------|
-| WebView setup | IndexedDB fails under `file://` (Pitfall 1) | Use `WebViewAssetLoader` from day one |
-| WebView setup | Cold start latency (Pitfall 9) | Pre-init WebView in background; strip unused EccoPath UI bundles |
-| JS bridge implementation | Background thread violation (Pitfall 2) | All bridge methods dispatch to main thread immediately |
-| JS bridge implementation | `evaluateJavascript` null callback (Pitfall 12) | Null-check all callbacks; guard on WebView attached state |
-| Build / asset bundling | Next.js absolute paths break in WebView (Pitfall 3) | Spike static export + WebViewAssetLoader before integration |
-| Build / asset bundling | Image optimization breaks export (Pitfall 13) | `images: { unoptimized: true }` in next.config.js |
-| Bridge algorithm integration | Last.fm rate limit explosion (Pitfall 4) | Disable UI on active bridge; expose cancel interface; backoff on error 29 |
-| Playlist builder | Wrong-artist fuzzy match (Pitfall 5) | Require artist score threshold; duration tiebreaker; empirical calibration |
-| Queue integration | ExoPlayer thread / addMediaItems (Pitfall 7) | `BridgeQueueHandler` on `Dispatchers.Main`; use `addMediaItems` not `setMediaItems` |
-| Spotify features | TOTP Gist single point of failure (Pitfall 8) | Mirror Gist before shipping; fallback messaging; manual artist entry always works |
-| Tab lifecycle | WebView memory leak on navigation (Pitfall 6) | Single WebView instance; proper `onRelease` cleanup; `cancelBridge()` JS call |
-| Any DB schema change | Destructive migration data loss (Pitfall 10) | Migration test required per schema change; consider separate bridge DB |
-| Public APK release | API key in APK (Pitfall 11) | Rotate Last.fm key; document risk |
-| Any bridge-adjacent Kotlin | `runBlocking` + bridge callback deadlock (Pitfall 14) | No new `runBlocking`; use coroutines/Handler for bridge dispatch |
+| Canvas architecture | Recomposition storm from clock state (Pitfall 1) | Isolate animation clock to draw phase; cache arc `Path` objects |
+| Canvas architecture | Hidden Canvas drawing at 60fps (Pitfall 12) | Use hard `if` not `AnimatedVisibility` for mode switching |
+| Pan/zoom + hit test | Wrong coordinate space for touch (Pitfall 2) | Invert transform before hit testing; scale hit radius by zoom |
+| Pan/zoom + hit test | Parent scroll intercepts Canvas pan (Pitfall 8) | Separate screen layout for graph mode vs bridge list mode |
+| Hyperbolic math port | NaN/Infinity near disk boundary (Pitfall 3) | Use `Double` precision; clamp euclidean radius at 0.97; add arc sanity check |
+| Hyperbolic math port | `null` geodesic not handled (Pitfall 13) | Pattern-match return; unit test seed-to-child link case |
+| Node rendering | Glow effects need `BlurMaskFilter` (Pitfall 7) | Pre-allocate `Paint` with `maskFilter`; test on API 26 |
+| Node rendering | Artist images cannot load in DrawScope (Pitfall 6) | Pre-load as `ImageBitmap` outside Canvas; or stay text-only |
+| Node rendering | Letter spacing has no Canvas equivalent (Pitfall 14) | Use `TextMeasurer` with `SpanStyle(letterSpacing)`; cache results |
+| State architecture | Multiple StateFlows cause Canvas recompositions (Pitfall 4) | Split screen into Canvas + Panel child composables; use `derivedStateOf` |
+| State architecture | Growing graph causes OOM (Pitfall 9) | Cap at 200 nodes; LRU bitmap cache; prune off-screen nodes |
+| FALA expansion | Burst API calls on rapid taps (Pitfall 5) | In-flight guard Set; semaphore limit 3; exponential backoff on 429 |
+| Animation | `withFrameMillis` zombie after navigation (Pitfall 10) | Never swallow `CancellationException`; prefer `InfiniteTransition` |
+| Pan/zoom UX | Transform state lost or stale on re-entry (Pitfall 11) | Store in ViewModel; reset on seed change; provide re-center button |
+| DB schema | Migration drops user data (Pitfall 15) | MigrationTestHelper test required; consider separate `pathwalker.db` |
 
 ---
 
 ## Sources
 
-- [Android Developers: Access native APIs with JavaScript bridge](https://developer.android.com/develop/ui/views/layout/webapps/native-api-access-jsbridge) — MEDIUM confidence (official docs, thread behavior confirmed)
-- [Android Developers: WebViewAssetLoader](https://developer.android.com/reference/androidx/webkit/WebViewAssetLoader) — HIGH confidence (official API docs)
-- [Chromium WebView docs: CORS and WebView API](https://chromium.googlesource.com/chromium/src/+/HEAD/android_webview/docs/cors-and-webview-api.md) — HIGH confidence (Chromium source docs)
-- [Chromium WebView docs: Android WebView and the UI thread](https://chromium.googlesource.com/chromium/src/+/HEAD/android_webview/docs/threading.md) — HIGH confidence (Chromium source docs)
-- [Last.fm API Terms of Service §4.4](https://www.last.fm/api/tos) — HIGH confidence (official ToS)
-- [Navidrome issue #2421: Last.fm error 29 rate limit](https://github.com/navidrome/navidrome/issues/2421) — MEDIUM confidence (real-world reproduction of rate limit behavior)
-- [Google ExoPlayer: Dynamic playlists with ExoPlayer](https://medium.com/google-exoplayer/dynamic-playlists-with-exoplayer-6f53e54a56c0) — MEDIUM confidence (official ExoPlayer team blog)
-- [Next.js issue #61210: crossorigin="" on static export](https://github.com/vercel/next.js/issues/61210) — MEDIUM confidence (confirmed bug in Next.js issue tracker)
-- [Droidcon 2024: Lifecycle and Performance with Traditional Views + Compose](https://www.droidcon.com/2024/09/17/managing-lifecycle-and-performance-challenges-when-combining-traditional-views-with-jetpack-compose/) — MEDIUM confidence (conference talk, verified against AndroidView docs)
-- [AndroidBugFix: evaluateJavascript null response](https://www.androidbugfix.com/2021/11/android-webview-evaluatejavascript.html) — LOW confidence (community article, behavior cross-checked against official docs)
-- [EccoPath source: lib/rateLimiter.ts, lib/bridgeCrawl.ts, lib/lastfm.ts](file:///home/kepler/Projects/EccoPath/lib/) — HIGH confidence (primary source, read directly)
-- [EccoMeld CONCERNS.md](file:///home/kepler/Projects/EccoMeld/.planning/codebase/CONCERNS.md) — HIGH confidence (primary source, read directly)
+- [Android Developers: Jetpack Compose performance best practices](https://developer.android.com/develop/ui/compose/performance/bestpractices) — HIGH confidence (official)
+- [Android Developers: Compose phases (draw phase state reads)](https://developer.android.com/develop/ui/compose/phases) — HIGH confidence (official)
+- [Android Developers: Graphics modifiers (drawWithCache)](https://developer.android.com/develop/ui/compose/graphics/draw/modifiers) — HIGH confidence (official)
+- [Android Developers: Pointer input in Compose](https://developer.android.com/develop/ui/compose/touch-input/pointer-input) — HIGH confidence (official)
+- [Android Developers: Multi-touch (transformable)](https://developer.android.com/develop/ui/compose/touch-input/pointer-input/multi-touch) — HIGH confidence (official)
+- [Android Developers: Tap and press gestures](https://developer.android.com/develop/ui/compose/touch-input/pointer-input/tap-and-press) — HIGH confidence (official)
+- [Android Developers: DrawScope API reference](https://developer.android.com/reference/kotlin/androidx/compose/ui/graphics/drawscope/DrawScope) — HIGH confidence (official)
+- [Android Medium: Custom Canvas Animations in Jetpack Compose](https://medium.com/androiddevelopers/custom-canvas-animations-in-jetpack-compose-e7767e349339) — HIGH confidence (Android Developer Relations author)
+- [Numerical Aspects of Hyperbolic Geometry (arXiv 2404.09039)](https://arxiv.org/html/2404.09039v1) — MEDIUM confidence (academic paper; floating point precision analysis)
+- [Last.fm API Terms of Service §4.4 (rate limit: 5 req/sec)](https://www.last.fm/api/tos) — HIGH confidence (official ToS)
+- [Navidrome issue #2421: Last.fm error 29 real-world behavior](https://github.com/navidrome/navidrome/issues/2421) — MEDIUM confidence (real-world reproduction)
+- [ProAndroidDev: Exploring Canvas in Jetpack Compose](https://proandroiddev.com/exploring-canvas-in-jetpack-compose-crafting-graphics-animations-and-game-experiences-b0aa31160bff) — MEDIUM confidence (verified against official docs)
+- [EccoPath source: lib/hyperbolicLayout.ts, components/graph/ForceGraph.tsx, components/graph/NodeRenderer.ts, components/graph/LinkRenderer.ts](file:///home/kepler/Projects/EccoPath/) — HIGH confidence (primary source, read directly)
+- [EccoMeld source: BridgeViewModel.kt, KotlinBridgeCache.kt, BridgeAlgorithm.kt, BridgeScreen.kt, LastFM.kt](file:///home/kepler/Projects/EccoMeld/) — HIGH confidence (primary source, read directly)
