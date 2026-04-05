@@ -39,9 +39,10 @@ Discover music you didn't know you wanted through meaningful, human-like genre b
 
 <!-- v2.0 features -->
 
-- [ ] Walk & Listen mode — ambient auto-discovery through bridges
-- [ ] Bridge History — persistent saved bridges with replay
-- [ ] Bridge Radio — expanded playlists beyond the target artist
+- [ ] Path Walker mode — interactive FALA exploration with music playback
+- [ ] Hyperbolic graph visualization — Poincare disk on Compose Canvas
+- [ ] Bridge History — persist bridges and walks to Room DB with replay
+- [ ] Bridge + Path Walker toggle on Bridge tab
 - [ ] Track resolution improvements — reduce "no tracks found" rate
 
 ### Out of Scope
@@ -109,12 +110,16 @@ Discover music you didn't know you wanted through meaningful, human-like genre b
 - Collab artist splitting, video fallback, Unicode track matching
 - 42 files changed, ~6,300 lines added
 
-## Next Milestone Goals
+## Current Milestone: v2.0 Path Walker & Discovery
 
-- Walk & Listen mode — ambient auto-discovery
-- Bridge History — persistent saved bridges
-- Bridge Radio — expanded playlists beyond the target
+**Goal:** Add interactive Path Walker exploration mode with hyperbolic graph visualization and persistent bridge history
+
+**Target features:**
+- Path Walker mode — pick 1 artist, see 5 FALA cards, choose direction, music plays as you walk
+- Hyperbolic graph visualization — Poincare disk ported from EccoPath to Compose Canvas
+- Bridge History — persist completed bridges and path walks to Room DB, replay from history
+- Bridge + Path Walker toggle on the Bridge tab
 - Track resolution improvements — reduce "no tracks found" rate
 
 ---
-*Last updated: 2026-04-05 after v1.0 milestone completion*
+*Last updated: 2026-04-05 after v2.0 milestone start*
