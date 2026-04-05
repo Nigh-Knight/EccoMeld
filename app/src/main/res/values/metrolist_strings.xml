@@ -965,7 +965,8 @@
     <string name="bridge_to_label">To artist</string>
     <string name="bridge_from_placeholder">Search artists\u2026</string>
     <string name="bridge_to_placeholder">Search artists\u2026</string>
-    <string name="bridge_ghost_confirm_hint">Tab to confirm</string>
+    <string name="bridge_clear_from_description">Clear from artist</string>
+    <string name="bridge_clear_to_description">Clear to artist</string>
     <string name="bridge_error_no_path">No path found between these artists</string>
     <string name="bridge_error_suggestion">Try artists from different genres</string>
     <string name="bridge_progress_hops">Found %1$d of %2$d hops</string>
