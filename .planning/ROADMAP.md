@@ -164,7 +164,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 Plans:
 - [x] 08-01-PLAN.md — LastFM getSimilarArtists API + Room entities + cache + rate limiter
 - [x] 08-02-PLAN.md — BridgeAlgorithm (Kotlin port of bidirectional beam search)
-- [ ] 08-03-PLAN.md — BridgeViewModel rewiring + Hilt DI + updated tests
+- [x] 08-03-PLAN.md — BridgeViewModel rewiring + Hilt DI + updated tests
 
 ### Phase 9: Bridge UI Redesign
 
